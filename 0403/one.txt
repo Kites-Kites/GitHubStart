@@ -1,0 +1,75 @@
+//mux_21.v
+module mux_21(input1,input2,sel,out);
+input [3:0] input1,input2;
+input [3:0] sel;
+output [3:0] out;
+wire [3:0] out;
+assign out = (!sel)?input1:input2;
+enmodule
+
+//mux_41.v
+module mux_41(
+  input [3:0] input1,
+  input [3:0] input2,
+  input [3:0] input3,
+  input [3:0] input4,
+  input [1:0] sel,
+  output reg[3:0] output
+);
+always @ * begin
+  case(sel)
+  2'b00: output = input1;
+  2'b01: output = input2;
+  2'b10: output = input3;
+  2'b11: output = input4;
+  default:output = 4'b0000;
+  endcase
+end
+
+//mux_41_tb.v
+module mux_41_tb.v;
+reg [3:0] input1,input2,input3,input4;
+reg [1:0] sel;
+wire [3:0] output;
+module mux_41(
+  .in1(input1),
+  .in2(input2),
+  .in3(input3),
+  .in4(input4),
+  .sel(sel),
+  .out(output)
+);
+initial begin
+in1 = 4'b0001;
+in2 = 4'b0010;
+in3 = 4'b0000;
+in4 = 4'b0011;
+sel = 2'b01;
+#10
+
+in1 = 4'b0110;
+in2 = 4'b0101;
+in3 = 4'b1010;
+in4 = 4'b1111;
+sel = 2'b00;
+#10
+
+in1 = 4'b0100;
+in2 = 4'b1011;
+in3 = 4'b1111;
+in4 = 4'b1010;
+sel = 2'b10;
+#10
+
+in1 = 4'b0100;
+in2 = 4'b1011;
+in3 = 4'b0000;
+in4 = 4'b0011;
+sel = 2'b11;
+#10
+$finish;
+
+end
+enmodule
+
+//与门，或门，非门，写在一个模块里，仿真波形使用截图，波形截图----第一次实验报告
