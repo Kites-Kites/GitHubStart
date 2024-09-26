@@ -3247,53 +3247,150 @@ IO=等+拷贝；
 
 我们的重点是第二种+第五种；
 
+******
+
+【最后这几节我记了很多纸质笔记】**
+
+***
+
+面试题：epoll是怎么解决他俩的缺点的？
+
+- select：拷贝数组到内核，内核也要拷贝到用户；
+
+- poll：拷贝数组到内核态，只拷贝revents到用户态；
+
+![image-20240918173254861](Linux.assets/image-20240918173254861.png)
+
+```
+https://www.bilibili.com/video/BV12p4y1372v/?spm_id_from=333.337.search-card.all.click&vd_source=355fe13b62ac41072b7ac70adc02bd34
+```
+
+哪一种数据结构支持高效的增删改？红黑树！O(LogN);所以epoll使用了红黑树；内核中有一个eventpoll，它中有一个红黑树存储每个fd与对应的事件，它中还有一个rdllist是一个双向链表，它存储已经有事件发生时，就把红黑树的节点挂到那个链表去；
+
+epoll_create会创建一个file与epollevent对应，即：通过前者的返回值就可以找到内核的数据结构（红黑树等）；
+
+epoll_ctl的第一个参数就是epoll_create的返回值，它通过这个找到epollevent中的红黑树，根据其他参数增删改epollevent中的红黑树上的节点；
+
+epoll_wait也不必拷贝，它通过第一个参数也可以找到eventpoll，它会查看rdllist是否有就绪事件，若有，就拷贝到用户空间（第二个参数），若没有，此进程会被休眠，被唤醒当且仅当：休眠时间超时被CPU重新调度/收到一个signal信号/有事件发生。我们回顾poll和select，它只要有事件发生，就会扫描所有的fd，时间复杂度O(N);
+
+***
+
+另：
+
+一个文件可能会与多个fd对应某个文件struct file;
+
+***
+
+IO多路复用动画：
+```
+https://www.bilibili.com/video/BV1r94y1q7hT/?spm_id_from=333.788&vd_source=355fe13b62ac41072b7ac70adc02bd34
+```
+
+![image-20240918175439430](Linux.assets/image-20240918175439430.png)
+
+普通的client server连接如上，我们常常使用的fgets read write等系统调用，以阻塞式为例：在socket接受内核缓冲区时有数据过来时，第一次你read，然后客户端进入下一次等用户输入，准备给server发，但是我server另一条数据到了socket内核缓冲区了，你在等用户输入那里塞住了，就没法收我这个数据了【具体详见上述链接，总之一环套一环，你一直收到的是旧的数据】；所以我们建议改进，比如将等和拷贝分开；
+
+所以我们要让read不依赖其他代码，防止出现上述问题：select等就可以这样做到；
+
+***
+
+另：
+
+IO多路复用就是让有事件发生时，应用程序就去处理相应的事件，
+
+***
+
+fcntl可以将一个文件描述符或者具体一个socket设置为非阻塞，如果没有数据，它会立刻返回，所以我们可以把代码写为循环，让他轮询检查，这样比阻塞好一点。阻塞：你一直等（书店老板给你找书），非阻塞：过段时间看一下（书有没有找到）；后者还是可以提高一些性能的：你回家可以干一些事情。可是，后者轮询是占用CPU的，特别是多个人（进程）轮询（很麻烦书店老板）。
+
+于是我们可以这样做：书店老板，书找到通知我（发信号）！我不想在这里一直等，也不想来来回回麻烦你；这就是信号驱动式IO；
+
+他有缺点：多个信号同时到达时，可能产生竞态条件，需要仔细同步和处理。当多个进程等待同一个I/O事件时，如果I/O事件发生，所有等待的进程都会收到信号，导致多个进程同时被唤醒，这被称为“惊群效应”。
+我们来看看异步IO：
+![image-20240918182725060](Linux.assets/image-20240918182725060.png)
+
+异步IO资源消耗太大且很复杂，你想，它要帮进程把IO这个事弄完，再通知它。
+
+综上，考虑多路复用：
+多路复用IO是一种IO模型，它允许应用程序同时处理多个IO操作。这种模型使用一个单独的系统调用来监视多个IO操作，并在其中一个操作准备好时通知应用程序。
+
+总图：
 
 
 
+![image-20240918182242062](Linux.assets/image-20240918182242062.png)
 
+这个图不行，应该先讲解信号驱动IO，再引出多路复用IO；
 
+***
 
+另：redis底层用了epoll，所以前者高效也要说明后者高效；
 
+火焰图就像一团燃烧的火焰，每个矩形代表一个函数调用。矩形的宽度表示该函数占用的CPU时间比例，高度表示调用栈的深度。颜色通常是随机的，目的是为了区分不同的函数。
 
+火焰图只能反映程序在某一时刻的性能状况，无法展示程序的动态变化。
 
+常用的火焰图生成工具有：
 
+- **Brendan Gregg 的 FlameGraph 工具**：一个开源的工具，可以基于多种性能采样工具生成火焰图。
+- **Linux 的 perf**：Linux 上强大的性能分析工具，结合 FlameGraph 可以生成火焰图。
+- **DTrace**：适用于 FreeBSD 和 macOS 的动态追踪框架，可以用于捕捉堆栈跟踪数据。
+- **eBPF (Extended Berkeley Packet Filter)**：现代 Linux 内核中的一种功能强大的性能分析工具，结合火焰图可以实现更高效的性能分析。
 
+总结来说，火焰图是一个非常直观且强大的工具，能够帮助开发者快速定位性能问题，特别是在 C++ 等高性能应用的性能优化过程中，它的价值尤为明显。
 
+***
 
+#### 108-LINUX-倒数第二节课-28：30【2024.03.30】
 
+epoll_wait的最后一个参数设置为0：非阻塞轮询；
 
+-1：阻塞
 
+_timeout(自己定义)：......
 
+EpollServer类：本质是对三个system call的封装；它内部实例化了一个Epoller模型对象；
 
+初始化：建立网络连接，拿到监听套接字；
 
+启动：将这个监听套接字fd添加（epoll_ct）到epoll模型（Epoller对象）中，然后让后者去epoll_wait；根据epoll_wait的输入输出型参数（一个结构体数组+一个max值）去处理（accept/read），处理可以封装为一个Handler函数（把结构体数组和max值传进去），哪个文件描述符的哪个事件就绪了，struct结构体写的很清楚（按位与即可）；
 
+另外：这个结构体数组大小自己定，epoll_wait会下内核（就绪队列）捞取已就绪的事件，如果有100个，但是你数组大小只有64个，它会先捞取64个，下次再捞；
 
+另：删除一个fd在先还是先close(fd)？应该先删，再关，因为epoll模型会判断fd是否合法，你如果先关了，再删就报错了；
 
+***
 
+epoll工作模式：LT和ET【epoll_wait的通知两种机制】
 
+![image-20240918214522674](Linux.assets/image-20240918214522674.png)
 
+![image-20240918214557148](Linux.assets/image-20240918214557148.png)
 
+![image-20240918214835909](Linux.assets/image-20240918214835909.png)
 
+![image-20240918225919286](Linux.assets/image-20240918225919286.png)
 
+![image-20240918230809876](Linux.assets/image-20240918230809876.png)
 
+LT:如果内核识别你epoll是LT模式，他在6 8描述符的事件就绪后，断开链表，拷贝他俩到用户空间后，还会重新把他俩重新添加到就绪队列里；下一次你调用epoll_wait时，还会拷贝，除非你读完了；【但啥时候就不添加回去了呢？？？？？？？？？？？】
 
+ET则不再添加。6 8被移除了，那么万一我在用户空间没读完呢？那就没机会处理了呗。怎么解决ET模式的这个缺点呢？那你就调用epoll_ctl （把这两个fd添加回就绪队列中）/干脆一次读完算了，一直利用**非阻塞**方式到把fd数据读完（不能用阻塞IO，因为它会再读完最后一个数据后，会阻塞住，等下一个！，而非阻塞发现没了就返回了）。
 
+总之：LT重复通知，对性能有浪费，还有会出现惊群现象。ET性能更好也有缺点：你得多做一些工作来保证数据读完（非阻塞IO）；
 
+Epoll模式默认LT；
 
+```
+https://www.bilibili.com/video/BV1ce4y137nC/?spm_id_from=333.337.search-card.all.click&vd_source=355fe13b62ac41072b7ac70adc02bd34
+```
 
+***
 
+epoll_create创建一个epoll实例；
 
+epoll_ctl：对epoll实例中红黑树添加/修改/删除某个fd对应的事件；它的某个参数可以修改LT、ET模式；
 
-
-
-
-
-
-
-
-
-
-
+epoll_wait：有就绪的，就返回，否则阻塞；
 
 
 
@@ -3997,13 +4094,13 @@ TCP要通信，要先建立连接（使用TCP报文）：
 
 ![image-20240912144553527](Linux.assets/image-20240912144553527.png)
 
-SYN-FIN标志位：
+SYN-FIN标志位：抽象地理解可以这样：SYN表示“打个招呼Hi”；FIN表示：“再见兄弟”；在三次握手时，起手就是SYN，在四次挥手中，起手就是FIN；
 
 三次握手：
 
 ![image-20240912145045950](Linux.assets/image-20240912145045950.png)
 
-ACKj+1收到后，未完成的连接移动到已完成队列后，accept就不阻塞了；
+ACK j+1收到后，未完成的连接将移动到已完成队列，这样accept就不阻塞了；
 
 队列大小不能太大，不然accept处理不过来；
 
@@ -4012,11 +4109,11 @@ SYN泛洪攻击：恶意疯狂建立连接；
 close时进行四次挥手：
 ![image-20240912145640278](Linux.assets/image-20240912145640278.png)
 
-close是通知对方关闭；
+close是【通知】对方关闭；
 
-可以变成三次挥手吗？除非我client也恰好准备关闭，ACK n+1 and FIN m同时发送；否则不行；
+可以变成三次挥手吗？除非我client也恰好准备关闭，ACK n+1 and FIN m这两条消息同时发送给对方；否则不行；
 
-可以是两次握手吗？SYN延迟或发起方发送SYN后关闭了；
+同样地，TCP可以是两次握手吗？不行，可能会出现几种情况：（任何一次SYN包在网络中延迟，客户端以为连接失败了，导致客户端重新发起连接）或（第二次的SYN包直接丢失了，服务端以为连接建立了其实并没有）或（发起方发送SYN后关闭了，server两次握手后以为连接建立了其实对面已经关闭了），总之，这些不仅会导致连接失败，也会增加网络资源的消耗；
 
 server端有一个“门迎”（监听套接字），所以如果client有n个套接字，则server有至少n+1个套接字；
 
@@ -4028,9 +4125,9 @@ socket第二个参数：TCP用stream，UDP用DGREAM；第一个AF_INET;基本固
 
 inet_addr可以把点分十进制转为网络字节序；
 
-127.0.0.1不经过路由器，但如果用自己的ip地址就会经过，前者抓包别用，不然啥也没有；
+127.0.0.1不经过路由器，但如果用自己的ip地址（自己的IP地址肯定不是127.0.0.1）就会经过路由器，前者抓包别用，不然啥也没有，抓包请用后者；
 
-client端口你如果指定了端口，但是你指定了端口，可是常常需要多个client测试，此时只有第一个可以跑通，其他都不行，因为port都被占用了；
+client端口你如果指定了端口，但是你指定了端口，可是常常需要多个client测试，此时只有第一个可以跑通，其他都不行，因为port都被占用了，所以应该让系统为我们分配；
 
 accept()到底干了什么：
 
@@ -4064,7 +4161,7 @@ d) 返回新创建的文件描述符。
 
 3. 数据的处理
 
-`accept` 本身不处理任何实际的数据传输。它只是提供了一个新的文件描述符，用于后续的数据收发。实际的数据写入是在 `accept` 之后，使用返回的新文件描述符进行的。
+`accept` 本身不处理任何实际的数据传输。它只是提供了一个新的文件描述符，用于后续的数据收发。实际的数据写入是在 `accept` 之后，使用accept返回的新文件描述符进行的。
 
 4. 代码解析
 
@@ -4102,12 +4199,11 @@ e) 新的文件描述符被返回给应用程序。
 
 ```
 int n = recv(c, buff, 127, 0);//home/hx/0912/TEST
-
 ```
 
 源代码只要把server的recv的大小改为1，将会出现缓冲区剩余字符的问题；
 
-recv他一看缓冲区有数据，就会读进来，然后client就会执行下面的代码，在我们的程序中，就fgets阻塞住了，所以有些字符后续来了后被安顿到client的接受缓冲区中，client就读不到了；
+recv他一看缓冲区有数据，就会读进来，然后client就会执行下面的代码，在我们的程序中，在fgets那里就阻塞住了，所以有些字符后续来了后被安顿到接受缓冲区中，我们却因为阻塞就读不到了；
 
 ![image-20240912163119523](Linux.assets/image-20240912163119523.png)
 
@@ -4121,9 +4217,9 @@ recv他一看缓冲区有数据，就会读进来，然后client就会执行下�
 
 粘包：多次发送的数据被对方一次收走；如上，send了三次，对方recv了一次就完事了；这可能会出现问题，比如你下载一个文件：发了50次，对方收了10次，这没事；但是如果我们要得到长宽高，对方发了三次 1 7 3 ，结果你一次收了1，第二次收了73，然后我们一直recv等第三个，这就麻烦了；怎么解决？发的数据字节数早早告诉对方/我发一次，对方收到请给我回复一下/添加一些标志在信息中；
 
-所谓字节流就是如此，recv的单位是字节......??????(TODO)
+所谓字节流就是如此，recv的单位是字节。
 
-
+***
 
 面试题：TCP如何确保连接可靠？
 
@@ -4173,11 +4269,504 @@ listen表示没有人连接；
 
 **TIME_WAIT状态存在的意义？面试重点；**
 
+- 如果你发了ACK但是可能会丢包，所以TIME_WAIT一下对面如果重传了FIN，你再发一遍；
+- 进程没了，但是OS把这个链接再维持一段时间。把陆续后来的报文被接受并丢弃掉；
+
+观察某个进程关联的端口号？使用什么命令？
+
+![image-20240919145616797](Linux.assets/image-20240919145616797.png)
+
+TCP连接的各个状态？这是重点；
+
+TCP和UDP区别？
+
+### 0919图论线下
+
+#### 复习
+
+重点：明白server client各个函数阻塞还是执行，都到哪一步了?
+
+***
+
+![image-20240919151626005](Linux.assets/image-20240919151626005.png)
+
+第二个client.cc发送了abc，但是server正忙于和第一个client.cc通话。
+
+只有第一个退出后，第二个abc从服务端的接收缓冲区收到屏幕上；
+
+图中红色部分是第二个client.cc运行起来且敲下去abc的结果；
+
+****
+
+![image-20240919153614844](Linux.assets/image-20240919153614844.png)
+
+多进程中，c==4？都等于4？
+
+***
+
+要能快速写出单进程-多进程-多线程的echoserver代码；
+
+****
+
+![image-20240919154020773](Linux.assets/image-20240919154020773.png)
+
+？
+
+***
+
+#### UDP
+
+![image-20240919160442930](Linux.assets/image-20240919160442930.png)
+
+无连接：收或发的时候得明确直到ip+port；他不像TCP，只要确定了那个套接字，就明确直到对面就是你；
+
+server跑起来，client连接，前者退出，后者再发数据，就在recvfrom阻塞了，**数据就丢了**（所以微信视频通话中，udp就可以，丢了就丢了，只要下一个数据跟上就不影响），前者如果再回来，此client还可以继续给发数据，因为是无连接的，client只要瞄准ip+port就可以发成功；其实，多个client跑起来，只要瞄准ip+port，你们随便发，谁先发过来，我server就给你回复；这就是天生并发的UDP；
+
+一般下载是用TCP，否则丢字节，校验失败，.exe就执行不起来了；
+
+微信视频电话：UDP；
+
+TCP：打电话，udp：发短信；
+
+前者建立连接只针对server和某个client；
+
+后者只要server起来，多个client随便发，瞄准ip+port；
+
+***
+
+recvfrom第五个参数什么时候可以传空？client必然收到server的？所以可以写空？
+
+***
+
+![image-20240919164144350](Linux.assets/image-20240919164144350.png)
+
+***
+
+ello和bc都丢了；
+
+原因：
+![image-20240919164310078](Linux.assets/image-20240919164310078.png)
+
+注意：udp的这个sendto和tcp的send不一样，前者并不会把数据合起来，一人一个UDP数据报，为什么？因为udp不是建立连接的，无法保证两个sendto是去往相同的进程，若相同，可以合起来，反之，你合起来干啥？他不像TCP，连接好连接之后，第一个报文和第二个报文是必然去同一个进程，tcp只要瞄准这个socket就行了。
+
+所以udp没有占包，tcp才会；
+
+udp的不可靠：接收端一次recvfrom没收完我的某个udp报文中的信息，那就没了，下一次recvfrom就是下一个udp数据报了；
+
+总之：tcp建立连接后，瞄准fd即可；
+
+udp中，recvfrom和sendto每次都瞄准ip+port;
+
+如何理解udp的尽力传？
+
+tcp：两次send，对面一次收了；udp：sendto两次，对面recvfrom必然两次；
+
+**面试：能快速实现tcp代码+tcp面经+tcp/udp区别+什么时候用tcp/udp?**
+
+### 0924图论线下
+
+面试：
+
+- TCP有粘包，UDP没有。原因？
+- 代码快速复现
+
+udp发送次数和收次数是一样的（只要没有丢包），tcp收次数小于等于发次数。
+
+![image-20240924094517841](Linux.assets/image-20240924094517841.png)
+
+
+
+tcp：监听套接字是socket创建的那个，连接套接字是accept返回的那个；
+
+udp两个端都只有一个；
+
+tcp和udp都是传输层；ip协议都是网络层；
+
+http是应用层，他在传输层使用TCP，；常用端口是：80（小于1024，所以需要root）；
+
+https拥有ce证书，常用端口：xxx；
+
+![image-20240924100355189](Linux.assets/image-20240924100355189.png)
+
+短连接：
+![image-20240924100857127](Linux.assets/image-20240924100857127.png)
+
+长连接：
+大量减少握手和挥手的开销....................
+
+具体：xxxx
+
+***
+
+HTTP server：
+
+![image-20240924102211353](Linux.assets/image-20240924102211353.png)
+
+![image-20240924103125790](Linux.assets/image-20240924103125790.png)
+
+![image-20240924102551205](Linux.assets/image-20240924102551205.png)
+
+![image-20240924112628195](Linux.assets/image-20240924112628195.png)
+
+![image-20240924113528173](Linux.assets/image-20240924113528173.png)
+
+![image-20240924114250315](Linux.assets/image-20240924114250315.png)
+
+![image-20240924114222697](Linux.assets/image-20240924114222697.png)
+
+![image-20240924143952389](Linux.assets/image-20240924143952389.png)
+
+### 0924下午
+
+
+
+![image-20240924144502207](Linux.assets/image-20240924144502207.png)
+
+即让这些函数阻塞去等待事件就绪，好了通知我，然后我并发处理它；
+
+epoll是Linux特有的；
+
+![image-20240924145225216](Linux.assets/image-20240924145225216.png)
+
+select看源码得知它最多支持0-1023共1024个描述符；
+
+![image-20240924145721415](Linux.assets/image-20240924145721415.png)
+
+具体操作select的中间三个参数用上图方法，因为位图不好操作；
+
+**能快速复现select从键盘读取数据的过程。**0924下午群里code；
+
+此外，select的最后一个参数可以直接使用struct大括号初始化：
+![image-20240924150935792](Linux.assets/image-20240924150935792.png)
+
+代码：
+![image-20240924151632285](Linux.assets/image-20240924151632285.png)
+
+注意：在select返回值大于0后，你得遍历select的第一个参数次FD_ISSET，看是哪些fd被设置了；
+
+这段代码放在了一个while循环中：
+
+
+
+****
+
+******
+
+如果把select推广到cs这种代码中，让多个人连接，每个连接有一个连接套接字，这样select发挥作用了，我们用一个数组来存储。待会儿select返回我们使用FD_ISSET来检测哪个fd有事件就绪了：
+具体代码：
+
+```
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/time.h>
+#include <sys/select.h>
+
+#define MAXFD 10
+
+int socket_init();
+
+void fds_init(int fds[])
+{
+  for (int i = 0; i < MAXFD; i++)
+  {
+    fds[i] = -1;
+  }
+}
+
+void fds_add(int fds[], int fd)
+{
+  for (int i = 0; i < MAXFD; i++)
+  {
+    if (fds[i] == -1)
+    {
+      fds[i] = fd;
+      break;
+    }
+  }
+}
+
+void fds_del(int fds[], int fd)
+{
+  for (int i = 0; i < MAXFD; i++)
+  {
+    if (fds[i] == fd)
+    {
+      fds[i] = -1;
+      break;
+    }
+  }
+}
+
+void Accept_Client(int sockfd, int fds[])
+{
+  int c = accept(sockfd, NULL, NULL);
+  
+  
+  //虽然accept函数提供了存储客户端信息的功能，但这并不是必需的。我们完全可以忽略这些信息，直接使用返回的新socket与客户端通信
+  //存储客户端信息主要是为了:
+a. 日志记录：服务器可能需要记录连接的客户端IP地址和端口号。
+b. 访问控制：服务器可能需要根据客户端的地址信息来决定是否允许连接。
+c. 网络诊断：在调试网络问题时，知道客户端的地址信息很有帮助。
+d. 特定应用需求：某些应用可能需要根据客户端的地址信息来提供不同的服务。
+//实际上，很多简单的服务器程序就是这么做的
+  
+  
+  
+  if (c < 0)
+  {
+    return;
+  }
+  printf("accept c=%d\n", c);
+  fds_add(fds, c);
+}
+
+void Recv_Date(int c, int fds[])
+{
+  char buff[128] = {0};
+  int n = recv(c, buff, 127, 0);
+  if (n <= 0)
+  {
+    fds_del(fds, c);
+    printf("client close\n");
+    close(c);
+    return;
+  }
+
+  printf("recv(%d)=%s\n", c, buff);
+  send(c, "ok", 2, 0);
+}
+int main()
+{
+  int sockfd = socket_init();
+  if (sockfd == -1)
+  {
+    exit(1);
+  }
+
+  int fds[MAXFD]; // 空的 -1
+  fds_init(fds);
+
+  fds_add(fds, sockfd);
+  fd_set fdset;
+  while (1)
+  {
+    FD_ZERO(&fdset);
+    int maxfd = -1;
+
+    for (int i = 0; i < MAXFD; i++)
+    {
+      if (fds[i] == -1)
+      {
+        continue;
+      }
+
+      if (fds[i] > maxfd)
+      {
+        maxfd = fds[i];
+      }
+
+      FD_SET(fds[i], &fdset);
+    }
+    struct timeval tv = {5, 0};
+    int n = select(maxfd + 1, &fdset, NULL, NULL, &tv);
+    if (n == -1)
+    {
+      printf("select err\n");
+    }
+    else if (n == 0)
+    {
+      printf("time out\n");
+    }
+    else
+    {
+      for (int i = 0; i < MAXFD; i++)
+      {
+        if (FD_ISSET(fds[i], &fdset))
+        {
+          if (fds[i] == sockfd)
+          {
+            // accept
+            Accept_Client(sockfd, fds);
+          }
+          else
+          {
+            // recv
+            Recv_Date(fds[i], fds);
+          }
+        }
+      }
+    }
+  }
+}
+int socket_init()
+{
+  int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+  if (sockfd == -1)
+  {
+    return -1;
+  }
+
+  struct sockaddr_in saddr;
+  memset(&saddr, 0, sizeof(saddr));
+  saddr.sin_family = AF_INET;
+  saddr.sin_port = htons(6000); // root
+  saddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+  int res = bind(sockfd, (struct sockaddr *)&saddr, sizeof(saddr));
+  if (res == -1)
+  {
+    printf("bind err\n");
+    return -1;
+  }
+
+  res = listen(sockfd, 5);
+  if (res == -1)
+  {
+    return -1;
+  }
+
+  return sockfd;
+}
+```
+
+这个代码最难的是：
+		接到select返回且大于0之后，你循环遍历一遍fds数组，然后发现某个fd就绪了（不等于-1），此时你需要判断它是不是sockfd，若是，说明“监听”套接字迎进来了客人，此时要调用Accept_Client函数中的  `int c = accept(sockfd, NULL, NULL);`（本来要存客户端信息到caddr中，但我们现在假设存起来，你下来肯定要recv，但人家不一定刚连上就给你发消息，你就阻塞住了，干脆不存了，拿到fd就行了，继续让select帮我们去等，c那个文件有内容，我们肯定就进入Recv_Date然后recv了），注意参数，我们并不需要把它放到caddr中，直接拿到一个c然后继续放到fds中，让伟大的select来给我们处理即可，注意：select每次循环都会把fds中的不为-1的添加到fd_set中，所以你不用担心。。反之，说明对面发数据过来了，你要recv了，recv时再判断以下recv函数返回值（如果是0，说明对端关闭了，此时你收到数据也没用啊，所以把这个fd删掉，并在屏幕打印提醒程序员，然后close这个socket）；
+
+​		select返回值大于0，只能说明有这么多个fd就绪了，但是是谁我们不知道，所以全遍历；poll也一样；
+
+
+
+***
+
+![image-20240924155010343](Linux.assets/image-20240924155010343.png)
+
+time_wait状态server启动会bind error；
+
+****
+
+**epoll是重点中的重点，而不是poll和select**：
+
+poll里面有个结构体，结构体中有个short，占用16位，大量的宏其实是位运算。
+
+![image-20240924162302333](Linux.assets/image-20240924162302333.png)
+
+使用方法：直接往某个结构体的events赋宏：
+![image-20240924163012533](Linux.assets/image-20240924163012533.png)
+
+poll里面有要写个struct pollfd类型的数组，每个元素是一个结构体，其中有某一个fd对应的请求的事件（用户填充）和就绪的是事件（内核填充）。他与select的区别其实显而易见：后者能管理的fd有限1024个，前者就比较猛了，你疯狂创建结构体数组就行了；
+
+poll是加强版的select；
+
+poll的第三个参数是毫秒，你写5000就是等5秒，写-1就是永久阻塞；
+
+![image-20240924163633260](Linux.assets/image-20240924163633260.png)
+
+如上，select返回我们用&运算判断是不是读事件就绪了；
+
+但是读事件分两种：监听套接字/连接套接字；所以判断fds[i].fd是不是与sockfd相等，分别对应accept和recv，我们把他俩封装一下；但是这两个数组的传参很值得一谈，前者你要把sockfd传进去，然后我们进去肯定还要继续让poll帮我们接受client的数据，所以把结构体数组传进去。后者：你得把描述符传进去，但是recv有可能返回0，表示client关闭了，所以我们要把那个fd从数组中删掉，所以结构体数组还是要传进去；
+
+![image-20240924164331123](Linux.assets/image-20240924164331123.png)
+
+如上，我们在select中写上accept(sockfd,NULL,NULL);此时我们写了caddr，但是我们发现这个caddr屁用没有，我们只会用到c这个文件描述符；
+
+******
+
+epoll：
+三个接口，Linux特有，在描述符数目比较多的时候性能很好，红黑树查询是logN的；
+
+poll和select是轮询（一个一个去找的）查找事件是否有发生，时间复杂度O(N)。特别在N比较大的时候；
+
+**epoll是主动让内核给我们说的?**
+
+**epoll poll select三者区别？面试重点**
+
+![image-20240924165717966](Linux.assets/image-20240924165717966.png)
+
+![image-20240924165726453](Linux.assets/image-20240924165726453.png)
+
+![image-20240924165821756](Linux.assets/image-20240924165821756.png)
+
+![image-20240924165830650](Linux.assets/image-20240924165830650.png)
+
+![image-20240924165838439](Linux.assets/image-20240924165838439.png)
+
+
+
+![image-20240924165846625](Linux.assets/image-20240924165846625.png)
+
+
+
+connection：短连接；
+
+HTTP/1.0:协议及版本；
+
+![image-20240924110215823](Linux.assets/image-20240924110215823.png)
+
+面试考；特别是GET和POST；
+
+![image-20240924110550342](Linux.assets/image-20240924110550342.png)
+
+具体看[Linux高性能服务器编程.pdf](file:///C:/Users/chunhuaqiushi/Desktop/Linux高性能服务器编程.pdf)
+
+![image-20240924110823194](Linux.assets/image-20240924110823194.png)
+
+![image-20240924115609722](Linux.assets/image-20240924115609722.png)
+
+****
+
+***
+
+*****
+
+******
 
 
 
 
-## TODO：TEST中client.cc代码有问题？如何将服务器和客户端都改为多线程？
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## other：
 
 在使用 `cin.getline` 读取输入时，行末并不会存储换行符 `\n`
 
