@@ -1,5 +1,9 @@
 # C++学习笔记
 
+
+
+
+
 ## 前言：
 
 - 所有课程课件
@@ -1490,7 +1494,1382 @@ std::priority_queue是STL中的，底层是堆；
 
 通过给这个priority_queue类传一个模板参数，整个类都可以用；
 
-## 杂乱
+## list(就业)
+
+1.分析下述代码，看看为啥不结束。提示：使用调试看it即可；
+
+```
+#include<iostream>
+#include<list>
+using namespace std;
+void test1() {
+    list<int> L;
+    for (int i = 0; i < 10; i++) {
+        L.push_back(i + 78);
+    }
+    for (auto& e : L) {
+        cout << e << " ";
+    }
+    auto it = L.begin();
+    while (it != L.end()) {
+        if (*it == 80) {
+            L.insert(it,666);
+        }
+        else {
+            it++;
+        }
+    }
+
+    cout << endl;
+}
+int main() {
+    test1();
+}
+```
+
+解释：L.insert(it,666);之后it仍然指向80，然后it++让他滚去下一个；
+
+当找到值为80的元素并插入666时，迭代器 `it` 没有更新。这导致了一个无限循环，因为 `insert` 操作后，迭代器仍然指向值为80的元素。在 std::list 中，`insert` 操作不会使迭代器失效。
+
+2.这个代码试图测试list的sort与库中的sort（借助vector）速度差距：在debug版本下边测试不明显，但是release是相当明显。这说明debug打了太多调试信息；在linux下默认编译出来就是release版本，要debug请加参数
+
+```
+#include<iostream>
+#include<list>
+#include<vector>
+#include<algorithm>
+#include<time.h>
+using namespace std;
+void test1() {
+    list<int> L1,L2;
+    vector<int>V;
+    const int NUM = 1000000;
+    V.reserve(NUM);
+
+    srand(time(nullptr));
+    for (int i = 0; i < NUM; i++) {
+        auto e = rand() % 100000;
+        L1.push_back(e);
+        L2.push_back(e);
+    }
+
+    int begin1 = clock();
+    L1.sort();
+    int end1 = clock();
+    cout << end1 - begin1 << endl;
+
+    int begin2 = clock();
+    for (auto& e : L2) {
+        V.push_back(e);
+    }
+    sort(V.begin(), V.end());
+    size_t i = 0;
+    for (auto& e : L2) {
+        e = V[i++];
+    }
+    int end2 = clock();
+    cout << end2 - begin2 << endl;
+
+}
+int main() {
+    test1();
+}
+```
+
+这是AI的代码：
+
+```
+#include <iostream>
+#include <list>
+#include <vector>
+#include <algorithm>
+#include <ctime>
+#include <chrono>
+
+using namespace std;
+using namespace std::chrono;
+
+void test1() {
+    const int NUM = 1000000;
+    const int RANGE = 1000000;
+    const int RUNS = 5;
+
+    double list_total = 0, vector_total = 0;
+
+    for (int run = 0; run < RUNS; ++run) {
+        list<int> L1, L2;
+        vector<int> V;
+
+        // 生成随机数据
+        srand(time(nullptr) + run);  // 每次运行使用不同的种子
+        for (int i = 0; i < NUM; i++) {
+            auto e = rand() % RANGE;
+            L1.push_back(e);
+            L2.push_back(e);
+        }
+
+        // 测试 list sort
+        auto start = high_resolution_clock::now();
+        L1.sort();
+        auto end = high_resolution_clock::now();
+        list_total += duration_cast<milliseconds>(end - start).count();
+
+        // 测试 vector sort（不包括拷贝时间）
+        V.assign(L2.begin(), L2.end());
+        start = high_resolution_clock::now();
+        sort(V.begin(), V.end());
+        end = high_resolution_clock::now();
+        vector_total += duration_cast<milliseconds>(end - start).count();
+    }
+
+    cout << "Average list sort time: " << list_total / RUNS << " ms" << endl;
+    cout << "Average vector sort time: " << vector_total / RUNS << " ms" << endl;
+}
+
+int main() {
+    test1();
+    return 0;
+}
+```
+
+下面为它的源码：
+```
+#include<iostream>
+#include<map>
+#include<list>
+#include<vector>
+#include<string>
+#include<algorithm>
+using namespace std;
+#include <random>
+
+
+void test_op(){//测试list.sort和将数据copy到vector后std::sort()再copy回来的性能差距
+	srand(time(0));
+	const int N = 10000000;
+	vector<int> v;
+	v.reserve(N);
+	list<int> lt1;
+	list<int> lt2;
+	std::random_device rd;  // 获取一个随机数引擎
+	std::mt19937 gen(rd());  // 使用种子初始化一个随机数引擎
+	std::uniform_int_distribution<> dis(1, 100); // 生成1到100之间的均匀分布随机数
+	for (int i = 0; i < N; ++i)
+	{
+		int e = dis(gen);
+		lt1.push_back(e);
+		lt2.push_back(e);
+	}
+	// 拷贝到vector排序，排完以后再拷贝回来
+	int begin1 = clock();
+	// 先拷贝到vector
+	for (auto& e : lt1)
+	{
+		v.push_back(e);
+	}
+	sort(v.begin(), v.end());
+	// 拷贝回去
+	size_t i = 0;
+	for (auto& e : lt1)
+	{
+		e = v[i++];
+	}
+	int end1 = clock();
+
+	int begin2 = clock();
+	lt2.sort();
+	int end2 = clock();
+
+	printf("vector+list:sort:%d\n", end1 - begin1);
+	printf("list sort:%d\n", end2 - begin2);
+}
+/*vector+list:sort:11471
+list sort:17801*/
+
+int main() {
+	test_op();
+}
+```
+
+
+
+***
+
+***
+
+***
+
+list的合并：
+![image-20240923152106299](C++学习笔记.assets/image-20240923152106299.png)
+
+上面代码如果merge之前不sort的话，就会出错。[merge函数是专门针对有序链表的]
+
+***
+
+我们自己实现一个自定义排序函数，并使用新的链表来存储排序后的节点：
+![image-20240923152844750](C++学习笔记.assets/image-20240923152844750.png)
+
+603行也可以使用res.sort();
+
+***
+
+list的unique去重也得排序后：
+```
+void test1() {
+    list<double> l1, l2;
+    l1.push_back(20.233);
+    l1.push_back(20.233);
+    l1.push_back(20.233);
+    l1.push_back(12.360);
+    l1.push_back(45.12);
+
+    l2.push_back(78.958);
+    l2.push_back(102.23);
+    l2.push_back(102.23);
+    l2.push_back(102.23);
+    l2.push_back(41.120);
+
+    l1.sort();
+    l2.sort();
+    l1.unique();
+    l2.unique();
+    cout << "l1: ";
+    for (auto& e : l1) {
+        cout << e << " ";
+    }
+    cout << endl << "l2: ";
+    for (auto& e : l2) {
+        cout << e << " ";
+    }
+
+    cout << endl;
+}
+```
+
+list的remove
+```
+void test1() {
+    list<double> l1, l2;
+    l1.push_back(20.233);
+    l1.push_back(20.233);
+    l1.push_back(20.233);
+    l1.push_back(12.360);
+    l1.push_back(45.12);
+
+    l2.push_back(78.958);
+    l2.push_back(102.23);
+    l2.push_back(102.23);
+    l2.push_back(102.23);
+    l2.push_back(41.120);
+
+    //remove=find+erase
+    l1.remove(45.12);
+    l2.remove(45);
+    cout << "l1: ";
+    for (auto& e : l1) {
+        cout << e << " ";
+    }
+    cout << endl << "l2: ";
+    for (auto& e : l2) {
+        cout << e << " ";
+    }
+
+    cout << endl;
+}
+```
+
+list的splice（转移/粘接）：
+
+![image-20240923153741355](C++学习笔记.assets/image-20240923153741355.png)
+
+直接把参数中那个链表的节点拿走，给到调用者，但是参数中的那个链表并不会被销毁，只剩一个头结点；
+
+他还有其他重载版本，除了上述的全部转移，还可以转移一个，可以转移一个区间；
+
+string早于STL，它的源代码不在STL源码中，在标准库；
+
+```
+l1.insert(l1.end(), 30.23);//l1.push_back(30.23);
+通过源码发现，push_back调用了insert
+```
+
+库中的代码看起来是需要技巧的，不能一行一行来看，要跳着看；
+
+在使用模板的时候要特别注意那个<T>，有时候会忘掉，不妨typedef一下：
+![image-20240923160406436](C++学习笔记.assets/image-20240923160406436.png)
+
+***
+
+list的iterator能是一个节点的指针？不行，它解引用访问不到val，再者它的存储不是连续的；
+
+C++中，单参数的构造函数支持隐式类型转换；
+
+***
+
+我们使用STL是碰不到对应的数据结构中的节点的，我们只能使用迭代器，迭代器相当于做了一层封装。如下：Node就是list的节点，我们不希望任何人碰到这个，所以我们写为私有，但是有人想问我iterator可以用吗？当然可以，你要使用迭代器遍历我的list，修改我的node都可以，所以iterator写为public；此外，范围for又是对于iterator的封装！你写好iterator之后，自然就可以使用范围for了，后者其实就是一个语法糖，底层还是iterator；
+
+![image-20240923163338321](C++学习笔记.assets/image-20240923163338321.png)
+
+****
+
+*******
+
+list.erase()返回指向下一位置的迭代器，传入的参数也是迭代器：
+![image-20240924180115815](C++学习笔记.assets/image-20240924180115815.png)
+
+***
+
+*****
+
+******
+
+list的模拟实现中：
+![image-20240924210034936](C++学习笔记.assets/image-20240924210034936.png)
+
+list中装的是A对象。
+
+```
+void test() {
+		list<A> lt;
+		lt.push_back(A(1, 1));
+		lt.push_back(A(2, 2));
+		lt.push_back(A(3, 3));
+		lt.push_back(A(4, 4));
+		auto it = lt.begin();
+		while (it != lt.end()) {
+			cout << it->_a << " " << it->_b << endl;
+			//本质是cout<<it->->_a<<" "<<it->->_b<<endl;但为了重载函数的可读性，编译器做了优化
+			//it->返回对象的地址（const或非const），得到地址后再去利用“地址->内容”的方式访问_a和_b
+			++it;
+		}
+//具体看代码https://blog.csdn.net/kitesxian/article/details/142477463?sharetype=blogdetail&sharerId=142477463&sharerefer=PC&sharesource=kitesxian&spm=1011.2480.3001.8118
+```
+
+
+
+
+
+
+
+## deque（图论）
+
+1.随机迭代器能做的事：
+![image-20240922094217107](C++学习笔记.assets/image-20240922094217107.png)
+
+可以利用遥控器的例子来想象；
+
+2.deque为什么不像vector一样有data？
+
+![image-20240922094740569](C++学习笔记.assets/image-20240922094740569.png)
+
+![image-20240922094958569](C++学习笔记.assets/image-20240922094958569.png)
+
+push_back(这是尾插，用_Last):
+![image-20240922095019211](C++学习笔记.assets/image-20240922095019211.png)
+
+_Map是<T**>,这个数组中的元素是<T※>,右边横着的是<T>比如int等；
+
+如果这一横行满了，
+
+![image-20240922095605705](C++学习笔记.assets/image-20240922095605705.png)
+
+_Next刚开始指向56前面那里，然后你Push_back_Next往后移动；一直移动，只要放满了：
+![image-20240922095834986](C++学习笔记.assets/image-20240922095834986.png)
+
+它会把这四个往上移动，给他腾出来一个int*来指向一个横行；
+
+如果一直push，然后就满了，然后就（对于int*这个map）扩容，然后把这个8个指针移动到尽可能中间的位置；
+
+![image-20240922100137480](C++学习笔记.assets/image-20240922100137480.png)
+
+同上，push_front是一样的；
+
+所以，deque没有data，vector有data，前者实际上是没有连续存储的；
+
+***
+
+![image-20240922100644846](C++学习笔记.assets/image-20240922100644846.png)
+
+deque不像vector满了就扩容，前者是分块管理的，只需要拷贝指针来指向你之前的空间即可，所以对象的位置不变，所以在包装类push_back时，你会发现，后者有太多拷贝构造；
+
+**自己实现一下**；
+
+***
+
+![image-20240922100949691](C++学习笔记.assets/image-20240922100949691.png)
+
+它会调用缺省构造函数填充这10个空间，然后析构；
+
+deque也一样；
+
+***
+
+vector.reserve可以预开辟空间，deque没有这个，原因是没必要，后者满了会扩容的，所以没必要预扩容；
+
+vector和deque最开销大的还是insert，相比vector的连续空间，后者开销更大：
+![image-20240922101446473](C++学习笔记.assets/image-20240922101446473.png)
+
+但是你会发现：
+![image-20240922101633042](C++学习笔记.assets/image-20240922101633042.png)
+
+它会把4 2前移，而不是将后面一堆数据往后移，可见他会在底层计算，所以我们在1000个元素中在500中插：
+
+![image-20240922101845695](C++学习笔记.assets/image-20240922101845695.png)
+
+****
+
+***
+
+双端队列增容不移动对象，所以你如果不知道对象个数多少，就先放到deque中，计算deque的size，然后把对象移动到vector中；因为vector的不断扩容是开销大的；
+
+![image-20240922102212959](C++学习笔记.assets/image-20240922102212959.png)
+
+***
+
+## list（图论）
+
+面试：为什么list用不了算法库中的排序，因为我们通过源码可知：源码的sort中有两个指针相减的操作，但我们同时也知道list是不连续存储的，具体表述就是：
+
+- **`std::sort` 算法要求随机访问迭代器：** 随机访问迭代器可以进行任意位置的跳转、算术运算（如指针相减），这些操作对于快速排序等算法至关重要。
+- **`list` 提供的是双向迭代器：** 双向迭代器只能向前或向后移动，不能进行随机访问。
+
+**具体来说：**
+
+- **`std::sort` 的实现原理：** 许多排序算法，比如快速排序，需要能够快速随机访问数组中的元素。通过指针相减，可以计算出两个元素之间的距离，从而实现快速划分。
+- **`list` 的存储方式：** `list` 的元素存储在不连续的内存块中，每个元素都有一个指向前一个元素和后一个元素的指针。这种存储方式虽然方便插入和删除，但无法通过简单的指针算术来访问任意位置的元素。
+
+那么list自己的sort是怎样的呢？
+
+- **特殊化实现：** `list` 的 `sort` 函数是专门为链表这种数据结构设计的。它通常采用**归并排序**这种稳定的排序算法，这种算法对于链表来说比较高效，因为链表的插入和删除操作相对较快。
+- **避免随机访问：** `list` 的 `sort` 函数在实现时，会充分利用链表的特性，避免进行随机访问，从而提高排序效率。
+- list的sort为list量身定制。
+
+***
+
+
+
+list的迭代器是双向迭代器，不是随即迭代器，list的每个节点是单独申请的，不连续；
+
+这几个容器的同样迭代方式：for(auto& e:xxxx){}
+
+还有一个：auto it = xx.begin();
+
+while(it!=xx.end()){//...  ++it;}
+
+但是对于vector和deque来说，it还可以随机加，如:it+=10;只要不越界就行；
+
+对于list，it++可以，it+=1;不行；？
+
+迭代器分类：
+每一层都可以向上兼容：
+![image-20240922104703154](C++学习笔记.assets/image-20240922104703154.png)
+
+
+
+***
+
+![image-20240922104912825](C++学习笔记.assets/image-20240922104912825.png)
+
+2^32就是4G，就是虚拟空间的大小，ivec一下子能申请这么多，所以这是假的。另外，像deque这些还有表头信息，list还有pre和next占用空间，所以不太可能有这么大；
+
+物理内存如果是8G，请问malloc最大可以申请多少？深信服
+
+***
+
+vector如果pop_back一下，请问那个空间会释放吗？不会，空间还会在，vector申请的是连续空间，不能用完一个就释放一个；
+
+vector有100万个空间，删除到10个，此时空间还有100万，请问怎么缩减到10？resize和交换？
+
+list如果pop_back一下，空间就释放了，它的节点是单独申请的；
+
+deque如果pop_back一下，可能会释放，可能不会，要看那一行是否还有元素；
+
+算法库中的search是二分搜索，find是依次搜索；
+
+算法库中的sort只能对deque和vector排序，但不能对于list排序：
+![image-20240922111031610](C++学习笔记.assets/image-20240922111031610.png)
+
+这个迭代器应该是随即迭代器；你list是双向迭代器；
+
+***
+
+***
+
+list有自己的排序。他并不会移动对象得位置，只会移动next和pre，所以list的sort前后啥也没有；
+
+vector排序就不是这样，不断析构，构造...........
+
+总之，对于自定义类型，list效率不错；
+
+***
+
+vector和deque都可以根据迭代器erase，list可以根据值来删除；
+
+前者可以这样：
+![image-20240922112238816](C++学习笔记.assets/image-20240922112238816.png)
+
+即：把val对应的迭代器找到，然后erase；
+
+***
+
+list有一个unique，它会删掉连续的重复的数字（只剩余一个），排序之后再unique，否则不能完全删掉，因为他不连续；
+
+![image-20240922112727341](C++学习笔记.assets/image-20240922112727341.png)
+
+即：list去重之前先排序；另外：删掉某个元素后，那个节点也会释放；
+
+***
+
+vector作任何插入和删除，都会迭代器失效，其实我们知道：vec运行时是否扩容影响着迭代器失效，但这是不确定的，我们赌不起；所以我们认为任何插入和删除都认为迭代器失效；有人可能会提前reserve好空间，但是程序运行起来是不确定的，我们仍然不能赌；
+
+***
+
+vector删除也会引起迭代器失效，删除会引起空间缩容，可能就会收缩到你迭代器指向的位置；
+
+***
+
+面试：list vector 使用场景？
+
+![image-20240922114752107](C++学习笔记.assets/image-20240922114752107.png)
+
+list因为要存储pre和next，所以空间利用率低，另外因为它的频繁申请与释放造成内存碎片；
+
+![image-20240922115320246](C++学习笔记.assets/image-20240922115320246.png)
+
+![image-20240922115145003](C++学习笔记.assets/image-20240922115145003.png)
+
+![image-20240922115417414](C++学习笔记.assets/image-20240922115417414.png)
+
+list底层是在堆上申请的，有可能在碎片中申请，所以不能保证先申请你就地址低，后申请就地址高；所以list的next可能就不在本节点内存周围，你CPU不应该把某个节点的周围内容也放在缓存中，因为next不一定在某个节点的周围。而对于vector来说，它的下一个就是真正的隔壁；
+
+list如何解决内存碎片？内存池（有内碎片（给你的内存可是你用不到（如何解决？把池的内存分的细一点，8字节的，9字节的，10字节的，但是有内存对齐问题导致访问速度下降的问题）））或者提前申请大内存？
+
+![image-20240922120235801](C++学习笔记.assets/image-20240922120235801.png)
+
+***
+
+list插入不会引起失效，因为它的节点是个“死人”；
+
+list删除除非删除了迭代的位置，否则也不会失效
+
+***
+
+![image-20240922120341841](C++学习笔记.assets/image-20240922120341841.png)
+
+***
+
+map底层是红黑树，然后会问到哪里还用过红黑树，epoll，然后问epoll用红黑树做了什么？
+
+***
+
+![image-20240922121339419](C++学习笔记.assets/image-20240922121339419.png)
+
+epoll_wait对应list，epoll_ctl对应红黑树；
+
+红黑树搜索是logN的，poll底层是数组？查询时logN的；
+
+## map
+
+insert  输入一个pair参数
+
+erase，输入一个pair或者迭代器，
+
+find
+
+map支持[]，set却不能
+
+![image-20240907180710242](C++学习笔记.assets/image-20240907180710242.png)
+
+时间复杂度是O(LogN)的；
+
+map内部是依照key的次序来排序的，缺省情况下按照小于；
+
+当key不存在时，你使用operator[]，默认 value与key构造一个键值对然后插入，返回该默认value，而你如果使用at()函数直接抛异常。
+
+```
+int main() {
+    map<int, double> idmap;
+    idmap[1] = 4.15;
+    idmap[2] = 45.12;
+    idmap[9] = 63.01;
+    cout << idmap[8] << endl;//构造<8,0.0>然后插入;
+}
+```
+
+![image-20240923112853577](C++学习笔记.assets/image-20240923112853577.png)
+
+****
+
+```
+int main() {
+    map<int, double> idmap;
+    idmap[1] = 4.15;
+    idmap[2] = 45.12;
+    idmap[9] = 63.01;
+    idmap.erase(9);
+    auto it = idmap.begin();
+    idmap.erase(it);
+}
+```
+
+如上，map.erase既可以传入迭代器也可以传入值；
+
+插入：
+![image-20240923114941202](C++学习笔记.assets/image-20240923114941202.png)
+
+insert返回一个pair，所以你先点一下，看访问哪个元素：
+你如果点first，你访问到了第一个元素，但是它是一个迭代器，指向一个pair，你又得箭头访问它的first和second；
+
+你如果点second，它是一个bool，直接就访问到了；
+
+默认按照key排序：
+![image-20240923115213196](C++学习笔记.assets/image-20240923115213196.png)
+
+这里可以将迭代器 it 理解为指针，使用箭头读取it所指向的pair的first元素和second元素
+
+
+
+
+
+****
+
+```
+//map的insert和at和[]很重要。
+int main() {
+    map<int, string> ismap;//map的值类型是pair，所以你要打印first和second
+    //我们可以使用insert插入数据
+    auto ret = ismap.insert(map<int,string>::iterator::value_type(23, "hanxian"));
+    cout << ret.second << ret.first->first << ":" << ret.first->second << endl;
+    //我们使用范围for，e是map中元素的别名，元素类型是pair
+    for (auto& e : ismap) {
+        cout << e.first << " " << e.second << endl;
+    }
+    //我们使用迭代器遍历，你it存储的是一个一个的pair的地址。
+    //迭代的过程就是中序遍历红黑树的过程，我们监视【原始视图】时，会发现他确实是树形结构；
+    auto it = ismap.begin();
+    while (it != ismap.end()) {
+        cout << it->first << ":" << it->second << endl;
+        ++it;
+    }
+}
+```
+
+
+
+图论线下课程：
+map底层是红黑树，查询时logN的，这也是epoll比poll快的原因;
+
+![image-20240923192430271](C++学习笔记.assets/image-20240923192430271.png)
+
+![image-20240923193536484](C++学习笔记.assets/image-20240923193536484.png)
+
+AVL和RBT都是BST的变种；
+
+上图为红黑树；
+
+![image-20240923192723157](C++学习笔记.assets/image-20240923192723157.png)
+
+在map中使用带pos的insert没有意义，因为它是自排序的，你想插入pos处，但是是不行的；
+
+insert的返回值：
+
+![image-20240923194105236](C++学习笔记.assets/image-20240923194105236.png)
+
+原来没有，插入成功；反之，失败；insert返回值是一个pair；
+
+![image-20240923194424915](C++学习笔记.assets/image-20240923194424915.png)
+
+at：
+![image-20240923195514055](C++学习笔记.assets/image-20240923195514055.png)
+
+返回key对应的value的引用。所以你可以用value类型去接；
+
+2^20=100万；红黑树查询真的快！epoll就是这样干的；
+
+![image-20240923200000656](C++学习笔记.assets/image-20240923200000656.png)
+
+poll底层是链表？
+
+![image-20240923200238740](C++学习笔记.assets/image-20240923200238740.png)
+
+**epoll_create创建一个epoll实例，函数返回一个epoll文件描述符，指向创建的epoll实例，有两个重要的指针，一个指向红黑树（存放所有注册的事件），一个指向双向list（存储就绪的事件）。当网卡接收到外来数据后，拷贝到内核缓冲区然后触发中断，cpu查询红黑树，找到对应节点看是否有这个事件，如果有，添加到list中，然后用户调用epoll_wait后，将内核空间的数据拷贝到用户空间。**
+
+AI的修改：
+
+- **epoll_create创建epoll实例：** 确实会创建一个epoll文件描述符，这个文件描述符指向内核中的一个epoll对象。
+- **红黑树和双向链表：** epoll内部主要使用红黑树和双向链表两种数据结构。红黑树用于存储所有注册的事件，保证高效的查找；双向链表用于存储就绪事件，方便遍历和删除。
+- **事件触发：** 当网卡接收到数据后，会触发中断，内核会将该事件添加到相应的红黑树节点上，如果该事件被设置了关注，则还会将其添加到就绪链表中。
+- **epoll_wait：** 当用户调用epoll_wait时，内核会将就绪链表中的事件拷贝到用户空间。
+
+### 需要补充和修正的地方：
+
+- **中断处理：** 中断处理的过程比您描述的要复杂一些。中断处理程序会检查中断来源，如果是网卡中断，就会将接收到的数据拷贝到内核缓冲区，并更新相关的socket接收缓冲区指针。然后，中断处理程序会唤醒等待处理该事件的进程或线程。
+- **红黑树节点：** 红黑树中的每个节点对应一个文件描述符，节点中存储了该文件描述符所关联的事件类型（读、写、异常等）。
+- **就绪链表：** 就绪链表中的节点包含了就绪事件的信息，例如文件描述符、事件类型等。
+- **epoll_wait的返回值：** epoll_wait的返回值表示就绪事件的数量，而不是直接返回内核空间的数据。
+- **epoll的两种工作模式：** epoll有LT（Level Triggered）和ET（Edge Triggered）两种工作模式，它们在触发事件的时机和处理方式上有所不同。
+
+### 总结
+
+您的描述对epoll模型的核心概念理解得比较到位。epoll的高性能主要得益于以下几点：
+
+- **红黑树：** 提供高效的查找和插入操作，使得在大量文件描述符中查找就绪事件变得非常快速。
+- **就绪链表：** 方便管理就绪事件，避免了对所有文件描述符进行线性扫描。
+- **事件驱动：** epoll采用事件驱动的机制，只有当事件发生时才会通知用户空间，避免了不必要的系统调用。
+- **内核态和用户态的交互优化：** epoll在内核态和用户态之间的数据拷贝次数较少，减少了系统开销。
+
+### 进一步学习
+
+如果您想更深入地了解epoll，可以参考以下方面：
+
+- **epoll的两种工作模式（LT和ET）的区别**
+- **epoll的性能优化**
+- **epoll在实际应用中的使用场景**
+- **epoll与select/poll的对比**
+
+**如果您有其他关于epoll的问题，欢迎继续提问。**
+
+**另外，我建议您尝试自己实现一个简化的epoll模型，这有助于您更深入地理解其原理。**
+
+*********
+
+*********
+
+**********
+
+![image-20240923201717467](C++学习笔记.assets/image-20240923201717467.png)
+
+也就是说：at找到了返回，反之抛异常；
+
+[]:
+![image-20240923201859546](C++学习笔记.assets/image-20240923201859546.png)
+
+若有，返回T&，反之，添加一个节点到map的红黑树，但value将调用默认构造赋值（内置类型比如int是0，double是0.00）；这是与异常的不同：即有**插入**的功能；
+
+![image-20240923202227138](C++学习笔记.assets/image-20240923202227138.png)
+
+所以[]的两种作用：插入节点，访问节点；
+
+于是 ismap[90] = "hanxian";这样也可以；ismap[90]返回T的&，然后你把"hanxian"付给他。然后对应的红黑树会进行调整；
+
+红黑树是按照key排序的；
+
+***
+
+![image-20240923203917890](C++学习笔记.assets/image-20240923203917890.png)
+
+查找某个值出现的次数；
+
+***
+
+某文件有大量IP地址，请输出访问次数前十的IP地址；但是要把次数作为Key排序；但是Key可能会重复，但是map不允许key重复，所以我们使用multimap(它允许key重复，但是没有[]访问方式)；
+
+即：
+![image-20240923204628059](C++学习笔记.assets/image-20240923204628059.png)
+
+打印的时候反过来；
+
+***
+
+map不允许key重复，multimap允许；map可以[]访问，multimap不行；
+
+***
+
+vector尽量不插入自定义类型。因为自定义类型有构造-赋值-析构等；vector要扩容的，对象析构-移动-赋值.....很麻烦；
+
+但是list deque map都不存在这个问题，list是pre和next的移动，deque也是指针数组的移动，map也是malloc一个节点，然后插进去（也是左孩子右孩子移动）；
+
+***
+
+count：
+只能返回0 1；因为map中key不能重复；
+
+find：
+
+![image-20240923205824609](C++学习笔记.assets/image-20240923205824609.png)
+
+map中还有三个比较重要的函数：
+![image-20240923210126029](C++学习笔记.assets/image-20240923210126029.png)
+
+后端业务：分发到空闲的server：![image-20240923212414656](C++学习笔记.assets/image-20240923212414656.png)
+
+
+
+1-一致性哈希：将IP地址作为key对server数量取模，来分流；但是取模有可能分流到同一台服务器（比如结果都是2，2就忙死了）；
+
+2-。。。
+
+
+
+3-但是如果一台server挂掉，将有另一台server承受，然后后者也挂了.....我们发现这也是有缺点的；
+
+4-将圆上的某些节点均匀映射到这些server：
+![image-20240923213900970](C++学习笔记.assets/image-20240923213900970.png)
+
+这个圆等效map；另外这个hash函数也很重要（好的哈希函数可以让输入的值平均地映射到你想要的位置，数学家设计了这些hash函数）
+
+
+
+
+
+
+
+
+
+## AVL树
+
+二叉搜索树（BST）：
+![image-20240923121302365](C++学习笔记.assets/image-20240923121302365.png)
+
+它是特殊的二叉搜索树。
+
+AVL树，全称Adelson-Velsky and Landis Tree，是一种自平衡的二叉搜索树。它通过在每次插入或删除操作后调整树的结构，确保任意节点的两个子树的高度差的绝对值不超过1。这种平衡特性使得AVL树在查找、插入和删除操作上都具有较高的效率，时间复杂度为O(log n)。
+
+## 红黑树
+
+红黑树也是一种自平衡的二叉搜索树，与AVL树一样，它通过对节点着色（红或黑）和一系列规则来保证树的平衡性。
+
+
+
+
+
+## set
+
+todo：
+
+**set中的元素不允许修改**？
+
+set的底层存储？
+
+**学一下空间配置器**
+
+**set (InputIterator first, InputIterator last, const  Compare& comp = Compare(), const Allocator& =  Allocator() );**
+
+![image-20240923110016346](C++学习笔记.assets/image-20240923110016346.png)
+
+反向迭代器的使用：
+
+```
+    set<int> s{ 4,54,545,48,45,4,5,79 };
+    cout << s.empty() << endl;
+    cout << s.size() << endl;
+    for (auto it = s.rbegin(); it != s.rend(); ++it) {//注意这里是++，++指的是往前走，而不是往右走
+        cout << *it << " ";
+    }
+```
+
+vector list forward_list deque都是**序列式容器**，容器中存储的都是元素本身，而且其底层都是线性数据结构。还有一种是**关联式容器**，他里面存储的是,<key,value>的键值对。关联式容器又分为两种：树形结构（set ,map,multiset,multiamp）(均使用平衡搜索树也就是红黑树作为底层实现)+哈希结构。
+
+set在底层使用红黑树实现的；set中的元素你只能删除或者添加，不能修改；
+
+非常适合去重；
+
+因为底层的实现，所以迭代器并不能简单的加减来移动：
+
+```
+void Print(const set<int>& s) {
+    for (auto& e : s) {
+        cout << e << " ";
+    }
+    cout << endl;
+}
+int main() {
+    set<int> s{ 4,54,545,48,45,4,5,79 };
+    Print(s);
+    auto it = s.begin();
+    advance(it, 3);//advance 函数用于将迭代器向前或向后移动指定次数。
+    //注意不能使用auto it = s.begin()+3;另外就是删除后迭代器会失效，需要重新获取
+    s.erase(it);
+    Print(s);    
+}
+```
+
+使用数组构建set，并演示set的自去重：
+![image-20240923111749753](C++学习笔记.assets/image-20240923111749753.png)
+
+set不支持[]访问；你可以用范围for或者迭代器去访问：
+
+```
+    set<int> s;//set插入时不需要插入键值对，set只存放value，底层是<value,value>
+    for (int i = 0; i < 10; i++) {
+        s.insert(rand() % 10);//set会自动去重
+    }
+    set<int>::iterator it = s.begin();
+    while (it != s.end()) {//使用set的迭代器遍历set中的元素，可以得到有序序列
+        cout << *it << " ";
+        ++it;
+    }
+    cout << endl;
+    for (auto& e : s) {
+        cout << e << " ";
+    }
+```
+
+
+
+```
+#include<set>
+
+set<int> s;
+
+s.insert(val);
+
+s.erase(val);
+
+s.size();
+
+s.find(x);
+
+s.count(x);//要么是1，要么是0
+
+s.empty();
+
+//#include<set>
+//#include<iostream>
+//using namespace std;
+//int main() {
+//	set<int> s;
+//	s.insert(24);
+//	s.insert(241);
+//	s.insert(240);
+//	s.insert(240);
+//	s.insert(240);
+//	s.insert(240);
+//	s.insert(240);
+//	s.insert(240);
+//	for (auto i = s.begin(); i != s.end(); i++) {//s!=s.end()
+//		cout << *i << " ";
+//	}
+//	puts("");
+//	s.erase(240);
+//	cout << s.size() << endl;
+//	for (auto i = s.begin(); i != s.end(); i++) {//s!=s.end()
+//		cout << *i << " ";
+//	}//它会按照大小输出;
+//	puts("");
+//}
+```
+
+set中如果插入重复元素，那么这个元素会被忽略掉，multiset是可以的；
+
+set支持insert logN的，支持find查找，count返回某一个数字的个数；erase，
+
+set最常用的是lower_bound(x)返回大于等于x的最小的那个数的迭代器
+
+upper_bound()返回大于x的最小的那个数的迭代器；
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## 杂
+
+### POD
+
+![image-20240920235655356](C++学习笔记.assets/image-20240920235655356.png)
+
+```
+#include <iostream>
+
+// 非 POD 类型
+struct NonPOD {
+    int x;
+    NonPOD() : x(42) { std::cout << "NonPOD constructed\n"; }
+};
+
+// POD 类型
+struct POD {
+    int x;
+};
+
+int main() {
+    // 非 POD 类型
+    NonPOD* np1 = new NonPOD;   // 调用构造函数
+    NonPOD* np2 = new NonPOD(); // 调用构造函数
+    std::cout << "np1->x: " << np1->x << ", np2->x: " << np2->x << std::endl;
+
+    // POD 类型
+    POD* p1 = new POD;   // x 的值未定义
+    POD* p2 = new POD(); // x 被初始化为 0
+    std::cout << "p1->x: " << p1->x << ", p2->x: " << p2->x << std::endl;
+
+    // 数组
+    int* arr1 = new int[3];   // 元素未初始化
+    int* arr2 = new int[3](); // 所有元素初始化为 0
+    std::cout << "arr1: " << arr1[0] << " " << arr1[1] << " " << arr1[2] << std::endl;
+    std::cout << "arr2: " << arr2[0] << " " << arr2[1] << " " << arr2[2] << std::endl;
+
+    // 清理
+    delete np1; delete np2;
+    delete p1; delete p2;
+    delete[] arr1; delete[] arr2;
+
+    return 0;
+}
+```
+
+1. 对于非 POD 类型，`new A` 和 `new A()` 的行为相同，都会调用构造函数。
+2. 对于 POD 类型，`new A()` 会进行值初始化，而 `new A` 则不会。
+3. 在实际编程中，为了确保一致性和避免未定义行为，建议总是使用 `new A()` 的形式，特别是在处理 POD 类型时。
+4. **POD stands for Plain Old Data - that is, a class (whether defined with the keyword `struct` or the keyword `class`) without constructors, destructors and virtual members functions.**
+
+```
+//about POD
+https://stackoverflow.com/questions/146452/what-are-pod-types-in-c
+```
+
+***
+
+### exit and _exit
+
+```
+#include <iostream>
+#include <cstdlib>
+#include <unistd.h>
+
+void exitFunc() {
+    std::cout << "Exit function called" << std::endl;
+}
+
+int main() {
+    std::atexit(exitFunc);
+
+    std::cout << "Starting main" << std::endl;
+
+    // 使用 exit()
+     exit(0);  // 这将调用 exitFunc 并刷新输出
+
+    std::cout << "This will not be printed" << std::endl;
+    return 0;
+}
+```
+
+```
+#include <iostream>
+#include <cstdlib>
+#include <unistd.h>
+
+void exitFunc() {
+    std::cout << "Exit function called" << std::endl;
+}
+
+int main() {
+    std::atexit(exitFunc);
+
+    std::cout << "Starting main" << std::endl;
+
+    // 使用 _exit()
+    _exit(0);  // 这将立即终止程序，不调用 exitFunc，也不刷新输出
+
+    std::cout << "This will not be printed" << std::endl;
+    return 0;
+}
+```
+
+观察输出结果即可。
+
+```
+exit() 和 _exit() 都是用于终止程序执行的函数，但它们在行为和使用场景上有一些重要的区别。让我们详细比较一下：
+
+头文件和标准：
+exit(): 定义在 <stdlib.h>（C）或 <cstdlib>（C++）中，是 C 和 C++ 标准库的一部分。
+_exit(): 定义在 <unistd.h> 中，是 POSIX 标准的一部分，主要在 Unix-like 系统中使用。
+清理操作：
+exit(): 执行一系列清理操作，包括：
+调用通过 atexit() 或 on_exit() 注册的退出处理函数。
+刷新和关闭所有打开的流（如标准输出）。
+删除通过 tmpfile() 创建的临时文件。
+_exit(): 立即终止程序，不执行任何清理操作。
+缓冲区处理：
+exit(): 会刷新标准 I/O 缓冲区。
+_exit(): 不会刷新任何缓冲区。
+静态对象析构：
+exit(): 在 C++ 中，会调用全局和静态对象的析构函数。
+_exit(): 不会调用任何析构函数。
+使用场景：
+exit(): 用于正常程序终止，当你需要执行清理操作时使用。
+_exit(): 主要用于特殊情况下的快速退出，如在 fork() 之后的子进程中，或需要立即终止程序而不进行清理时。
+返回状态：
+两者都接受一个整数参数作为退出状态，通常 0 表示成功，非 0 表示错误.
+使用 exit() 进行正常的程序终止，特别是当你需要执行清理操作时。
+使用 _exit() 在需要立即终止程序而不执行任何清理的特殊情况下，如在 fork() 后的子进程中。
+```
+
+***
+
+***
+
+```
+https://stackoverflow.com/questions/35088599/what-are-unevaluated-contexts-in-c
+```
+
+typeid sizeof decltype noexcept与类型的关系！！！
+
+***
+
+### sanitizer
+
+是的，我非常熟悉 sanitizer。Sanitizer 是一组强大的调试工具，主要用于 C 和 C++ 程序的动态分析。它们由 LLVM 项目开发，并集成到了 GCC 和 Clang 编译器中。Sanitizer 可以帮助开发者发现各种运行时错误，这些错误通常很难通过常规调试方法检测到。
+
+以下是关于 Sanitizer 的一些重要信息：
+
+1. 主要类型的 Sanitizer：
+
+   a) AddressSanitizer (ASan)：检测内存错误，如缓冲区溢出、使用释放后的内存等。
+   
+   b) MemorySanitizer (MSan)：检测未初始化内存的使用。
+   
+   c) ThreadSanitizer (TSan)：检测数据竞争和死锁等并发问题。
+   
+   d) UndefinedBehaviorSanitizer (UBSan)：检测未定义行为，如整数溢出、空指针解引用等。
+
+2. 工作原理：
+   Sanitizer 在编译时插入额外的检查代码，这些代码在运行时监控程序的行为。
+
+3. 使用方法：
+   通常通过编译器标志启用，例如：
+   ```
+   gcc -fsanitize=address -g myprogram.c -o myprogram
+   clang -fsanitize=address -g myprogram.cpp -o myprogram
+   ```
+
+4. 优点：
+   - 能够检测到难以通过常规测试发现的错误。
+   - 提供详细的错误报告，包括堆栈跟踪。
+   - 相比 Valgrind 等工具，运行时开销较小。
+
+5. 缺点：
+   - 会增加程序的运行时间和内存使用。
+   - 某些 Sanitizer 不能同时使用（如 ASan 和 MSan）。
+
+6. 适用场景：
+   - 开发和测试阶段。
+   - 集成测试和持续集成流程。
+   - 调查难以重现的 bug。
+
+让我给你一个简单的例子，展示如何使用 AddressSanitizer 检测内存错误：
+
+```cpp
+#include <iostream>
+
+int main() {
+    int *array = new int[10];
+    array[10] = 5;  // 越界访问
+    delete[] array;
+    return 0;
+}
+```
+
+编译并运行这个程序：
+
+```
+g++ -fsanitize=address -g example.cpp -o example
+./example
+```
+
+你会看到类似这样的输出：
+
+```
+=================================================================
+==12345==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x603e0000dfd0 at pc 0x55d3e3f6f8b3 bp 0x7ffd3c0d2670 sp 0x7ffd3c0d2660
+WRITE of size 4 at 0x603e0000dfd0 thread T0
+    #0 0x55d3e3f6f8b2 in main (/path/to/example+0x8b2)
+    #1 0x7f7f3e2220b2 in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x270b2)
+    #2 0x55d3e3f6f78d in _start (/path/to/example+0x78d)
+
+0x603e0000dfd0 is located 0 bytes to the right of 40-byte region [0x603e0000dfa8,0x603e0000dfd0)
+allocated by thread T0 here:
+    #0 0x7f7f3e7ad867 in operator new[](unsigned long) (/usr/lib/x86_64-linux-gnu/libasan.so.5+0x111867)
+    #1 0x55d3e3f6f896 in main (/path/to/example+0x896)
+    #2 0x7f7f3e2220b2 in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x270b2)
+
+SUMMARY: AddressSanitizer: heap-buffer-overflow (/path/to/example+0x8b2) in main
+Shadow bytes around the buggy address:
+...
+==12345==ABORTING
+```
+
+这个报告清楚地指出了堆缓冲区溢出的位置和原因。
+
+使用 Sanitizer 可以大大提高代码的质量和可靠性，特别是在处理复杂的内存管理和并发问题时。它是现代 C/C++ 开发工具链中不可或缺的一部分。
+
+****
+
+*******
+
+### sizeof的重叠？
+
+**`sizeof` 运算符的准确性：** 当我们使用 `sizeof` 运算符获取一个对象的字节数时，我们希望得到的是这个对象独占的内存空间大小。如果存在重叠，那么 `sizeof` 的结果就会不准确，因为一部分内存可能被多个对象共享：比如**联合体（union）：** 联合体的成员共享同一块内存空间，因此联合体的不同成员就是重叠的。在使用 `sizeof` 运算符时，我们默认假设操作的对象是非重叠的。
+
+***
+
+![image-20240921002357675](C++学习笔记.assets/image-20240921002357675.png)
+
+****
+
+### 大小端and生长方向
+
+![image-20240921002601988](C++学习笔记.assets/image-20240921002601988.png)
+
+![image-20240921002613609](C++学习笔记.assets/image-20240921002613609.png)
+
+### 文件I/Oand标准I/O
+
+![image-20240921002721836](C++学习笔记.assets/image-20240921002721836.png)
+
+```
+https://blog.csdn.net/qq_53676406/article/details/129025362
+```
+
+文件指针：每打开文件的时候，系统在内存中创建FILE结构体变量，并填充其中的信息（这个打开文件的基本信息），它是一个结构体类型（FILIE（typedef为FILE）），定义在stdio.h中，我们一般使用FILE*（也就是fopen的返回值）来维护这个结构体变量，通过这个变量就可以找到与它关联的文件，fclose可以关闭这个文件；
+
+![image-20240921120224490](C++学习笔记.assets/image-20240921120224490.png)
+
+![image-20240921120340891](C++学习笔记.assets/image-20240921120340891.png)
+
+数组名就是首地址，不用再取地址了；
+
+![image-20240921120442653](C++学习笔记.assets/image-20240921120442653.png)
+
+前面几个是适用于所有流的，不仅仅文件，还有屏幕，键盘，存储设备等；
+
+注意：这里面没有printf，scanf，是f打头的；前两个适用于标准输入输出流；
+
+fread和fwrite是针对文件的，![image-20240921121503416](C++学习笔记.assets/image-20240921121503416.png)
+
+读或者写之前要fopen，而它的参数根据你接下来要做的事而不同，如上，w是打开文本文件，wb是打开二进制文件；
+
+![image-20240921121807213](C++学习笔记.assets/image-20240921121807213.png)
+
+![image-20240921121818248](C++学习笔记.assets/image-20240921121818248.png)
+
+如上，它是按照二进制方式写的，人读不懂；
+
+fread：
+![image-20240921122108286](C++学习笔记.assets/image-20240921122108286.png)
+
+vs中，右键【源文件】-添加【现有项】-可以把已经有的文件，添加到vs版面上来；
+
+![image-20240921142235371](C++学习笔记.assets/image-20240921142235371.png)
+
+C语言进阶！TODO
+
+```
+#define _CRT_SECURE_NO_WARNINGS 1
+#include<cstdio>
+#include<cstring>
+struct S {
+    int age;
+    char arr[10];
+}s;
+int main() {
+    FILE* fp = fopen("test.txt", "w");
+    if (fp == NULL) {
+        perror("fopen");
+        return 1;
+    }
+    int pos1 = ftell(fp);
+    printf("pos1=%d\n", pos1);
+    s.age = 90;
+    strcpy(s.arr, "hanxian");
+    fwrite(&s, sizeof(struct S), 1, fp);//fwrite(&s, sizeof s, 1, fp);
+    int pos2 = ftell(fp);
+    printf("pos2=%d\n", pos2);
+    fclose(fp);
+    struct S s2;
+    FILE* fp2 = fopen("test.txt", "r");//在进行读检测前请把w模式打开的文件关掉，重新打开文件，不然读出来数据不正确{是因为文件的位置指针已经改变了}
+    int pos3 = ftell(fp2);
+    printf("pos3=%d\n", pos3);
+    fread(&s2, sizeof(struct S), 1, fp2);
+    printf("%d %s\n", s2.age, s2.arr);
+    int pos4 = ftell(fp2);
+    printf("pos4=%d\n", pos4);
+    fclose(fp2);
+    return 0;
+}//这段代码为啥输出16？与结构体对齐有关？
+```
+
+
+
+
+
+流的概念：
+数据可能会写在存储设备、网络、屏幕、文件上，他们是不同的，我们程序员不需要懂它们，作为C程序员，我们仅仅关注流，也就是FILE的一个结构体变量他会去维护一个流，这是一种抽象；
+
+而：
+![image-20240921120819478](C++学习笔记.assets/image-20240921120819478.png)
+
+每次你上来printf scanf这样，正是因为默认打开了，所以你可以这样操作。
+
+
+
+### 堆和栈
+
+```
+https://zhuanlan.zhihu.com/p/528715048
+```
+
+### 八数码（BFS）
+
+```
+https://www.acwing.com/problem/content/video/847/
+```
+
+### DS_可视化（?）
+
+```
+https://www.cs.usfca.edu/~galles/visualization/Algorithms.html
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ```
 int main() {
@@ -1535,7 +2914,7 @@ int x = 10;
 //不必再定义
 ```
 
-## extern
+### extern
 
 ```
 //add.h
@@ -1543,6 +2922,46 @@ extern inline int add(int x,int y){
 	return x+y;
 }
 ```
+
+### 杂乱
+
+![image-20240916102449407](C++学习笔记.assets/image-20240916102449407.png)
+
+### typedef and using
+
+typedef用法如下：
+
+```
+typedef int* PINT;//PINT p = nullptr;
+typedef char* PCHAR;//PCHAR p2  = nullptr;
+```
+
+
+
+![image-20240916102654465](C++学习笔记.assets/image-20240916102654465.png)
+
+C++11中引入了using，用法如下：
+
+```
+using u_int8 = unsigned char;
+using u_int16 = unsigned short;
+```
+
+using还可以和template搭配使用：
+
+![image-20240916103026556](C++学习笔记.assets/image-20240916103026556.png)
+
+using比typedef更灵活；
+
+### 左右值-将亡值
+
+![image-20240916104529522](C++学习笔记.assets/image-20240916104529522.png)
+
+将亡值如果可以取地址，我们称为左值，反之称为右值；
+
+右值和将亡值的引入旨在做好C++面向对象的资源管理，提高性能；
+
+
 
 ## 图论C++（0913中秋节开始看杨老师的回放）
 
@@ -2765,17 +4184,513 @@ iimap[]返回引用（就是某个数出现次数的引用），然后你对他+
 
 ***
 
+统计一个文件中的每个单词出现的次数：
+```
+#include <cstring>
+#include <vector>
+#include <utility>
+#include <memory>
+#include <functional>
+#include <algorithm>
+#include <fstream>
+#include <map>
+#include <iostream>
+using namespace std;
+
+#define BEGIN 1
+#define IN_WORD 2
+#define OUT_WORD 3
+
+void SetMap(const char *str, std::map<std::string, int> &simap)
+{
+  const char *pa = nullptr;
+  const char *pb = nullptr;
+  int tag = BEGIN;
+  for (int i = 0; str[i] != '\0'; i++)
+  {
+    switch (tag)
+    {
+    case BEGIN:
+    {
+      if (isalpha(str[i]))
+      {
+        tag = IN_WORD;
+        pa = &str[i];
+      }
+      else
+      {
+        tag = OUT_WORD;
+      }
+      break;
+    }
+    case IN_WORD:
+    {
+      if (!isalpha(str[i]))
+      {
+        tag = OUT_WORD;
+        pb = &str[i];
+        std::string word(pa, pb);
+        simap[word] += 1;
+      }
+      break;
+    }
+    case OUT_WORD:
+    {
+      if (isalpha(str[i]))
+      {
+        tag = IN_WORD;
+        pa = &str[i];
+      }
+      break;
+    }
+    }
+  }
+  if (tag == IN_WORD)
+  {
+    std::string word(pa);
+    simap[word] += 1;//map的key是什么类型，这个[]中就放入的是什么类型.map重载了[];
+  }
+}
+
+
+int main()
+{
+  std::map<std::string, int> simap;
+  ifstream ifile("simap_2.cc");
+  if (!ifile.is_open())
+  {
+    cerr << "Failed to open file." << endl;
+    return 1;
+  }
+
+  char buff[256];
+  while (ifile.getline(buff, 255))
+  {
+    SetMap(buff, simap);
+  }
+
+  for (const auto &it : simap)
+  {
+    cout << it.first << " : " << it.second << '\n';
+  }
+
+  return 0;
+}
+//https://gitee.com/xatuhx/code/blob/master/0915
+```
+
+![image-20240916110529139](C++学习笔记.assets/image-20240916110529139.png)
+
+[]重载不能乱重载，[]只能有一个参数；
+
+***
+
+[]查询到返回值，反之增加节点；
+
+![image-20240916111035128](C++学习笔记.assets/image-20240916111035128.png)
+
+但是你你可以用at就不会这样（他是带越界检查的）：
+![image-20240916111149154](C++学习笔记.assets/image-20240916111149154.png)
+
+他如果没有找到的话，就会抛异常：
+![image-20240916111234313](C++学习笔记.assets/image-20240916111234313.png)
+
+所以我们可以使用trycatch来捕获异常：
+![image-20240916111500530](C++学习笔记.assets/image-20240916111500530.png)
+
+***
+
+map是自排序的，你插入就行了，而不能让你指定前插还是尾插；
+
+***
+
+![image-20240916112008202](C++学习笔记.assets/image-20240916112008202.png)
+
+***
+
+![image-20240916112844840](C++学习笔记.assets/image-20240916112844840.png)
+
+注意红圈，equal_range返回的是一个pair，pair中装的是迭代器，所以我们**点上**第一个迭代器**指向**的元素的key....
+
+****
+
+与上面不同的是lowwer_bound和upper_bound,他俩返回迭代器，直接指向即可；
+
+![image-20240916113715095](C++学习笔记.assets/image-20240916113715095.png)
+
+另外值得注意的是：if判断可以防止崩溃（包括上面的equal_bound）都需要这个if判断，不然找不到想要的值就会崩掉；
+
+***
+
+一致性哈希：
+增加节点只会影响一部分数据，而不会像初级的负载均衡一样(初级负载均衡选哪个服务器是要对服务器数量取模的，所有数量一变化，全得变，且变了后缓存也变了)，影响所有；
+
+好的哈希算法都被申请专利了；
+
+```
+详见：一致性工作原理.pdf
+```
+
+***
+
+块作用域：if else那种括号，或者单纯一个括号；
+
+***
+
+![image-20240916121121417](C++学习笔记.assets/image-20240916121121417.png)
+
+在Int的构造函数中，类域中的value被同名隐藏了，value=value相当于10=10；cout也是打印10；
+
+a.Print()时，a对象自身的value还没有被初始化，只是把空间建立起来了，所以打印随机值；
+
+所以左侧value应该写为Int::value或者this->value;
+
+***
+
+![image-20240916122326741](C++学习笔记.assets/image-20240916122326741.png)
+
+上述我们采用了初始化列表，我们不知道这个value到底是对象的value还是函数参数的value，所以我们假设它是函数形参value，但是在构造函数的函数参数列表中形参value已经构建过了，是10，此时如果冒号右侧这个value还是函数形参的话，那就重复构建了，所以这个value是对象的value；
+
+***
+
+![image-20240916124250939](C++学习笔记.assets/image-20240916124250939.png)
+
+***
+
+![image-20240916124748893](C++学习笔记.assets/image-20240916124748893.png)
+
+const修饰*this，但是你返回int&，所以编译不过；
+
+***
+
+![image-20240916125013549](C++学习笔记.assets/image-20240916125013549.png)
+
+***
+
+![image-20240916125855795](C++学习笔记.assets/image-20240916125855795.png)
+
+***
+
+![image-20240916130251042](C++学习笔记.assets/image-20240916130251042.png)
+
+所以你<>中写的是什么类型，reference就是这个类型的引用；
+
+同理，const reference就是这个类型的常引用；
+
+***
+
+![image-20240916131128288](C++学习笔记.assets/image-20240916131128288.png)
+
+***
+
+### 工业24-07-17C++习题讲解（1）
+
+1.const使用场景
+
+```
+C中修饰变量，数组，指针（修饰指向，自身，或者兼而有之），以变量为主
+C++中，//const int len = 10;int arr[len];C中error；
+修饰变量，数组，指针（修饰指向，自身，或者兼而有之）；
+const还可以修饰类中的方法，修饰*this；
+还可以修饰成员；.....
+```
+
+![image-20240916152044076](C++学习笔记.assets/image-20240916152044076.png)
+
+这样它会调用缺省的构造函数，给num一个随机值，但是它是const的，你后续不能修改，所以C++不允许这样干。
+
+***
+
+![image-20240916152709421](C++学习笔记.assets/image-20240916152709421.png)
+
+分清楚初始化列表和大括号，后者是赋值；`const` 成员变量必须在构造函数的初始化列表中初始化。初始化列表是在构造函数体执行之前执行的
+
+***
+
+![image-20240916154510961](C++学习笔记.assets/image-20240916154510961.png)
+
+strcpy他是认`\0`的，cout也是这样；
+
+***
+
+![image-20240916154853751](C++学习笔记.assets/image-20240916154853751.png)
+
+![image-20240916154920139](C++学习笔记.assets/image-20240916154920139.png)
+
+这次给了大小，所以未初始化的是`\0`;
+
+![image-20240916155407004](C++学习笔记.assets/image-20240916155407004.png)
+
+printf：格式化输出函数：写数据到stdout；返回值是打了多少字符（包括回车）；
+
+![image-20240916160043401](C++学习笔记.assets/image-20240916160043401.png)
+
+fprintf：将数据写入文件指针FILE*指向的文件，包括stdout；
+
+![image-20240916160118401](C++学习笔记.assets/image-20240916160118401.png)
+
+sprintf：将格式化数据写入到缓冲区；返回n；
+
+![image-20240916160536673](C++学习笔记.assets/image-20240916160536673.png)
+
+***
+
+![image-20240916161043791](C++学习笔记.assets/image-20240916161043791.png)
+
+***
+
+memcpy
+
+![image-20240916161630680](C++学习笔记.assets/image-20240916161630680.png)
+
+***
+
+C++中的指针参数传递，引用参数传递有什么区别?
+
+***
 
 
 
+![image-20240916162415305](C++学习笔记.assets/image-20240916162415305.png)
 
+***
 
+![image-20240916162528196](C++学习笔记.assets/image-20240916162528196.png)
 
+这俩有啥区别？
 
+***
 
+什么是栈溢出？栈溢出的原因？它是一种运行时错误可以使用工具来分析；
+***
 
+win下默认栈大小1M，LINUX是10M；也可以使用编译命令来指定大小；
 
+***
 
+堆区and栈区，堆（用户管理）栈（系统管理），栈有一定算法，后者更快；前者是运行大块数据，不用时归还，注意内存泄漏；
+
+***
+
+![image-20240916163055180](C++学习笔记.assets/image-20240916163055180.png)
+
+C语言的书要看！！！
+***
+
+为什么C++可以重载？
+***
+
+new and malloc
+
+务必能讲出new和malloc的底层实现！
+
+对于内置类型是可以混用的，自定义类型如果没有析构和构造的话，也可以混用；
+
+***
+
+![image-20240916163802747](C++学习笔记.assets/image-20240916163802747.png)
+
+error
+
+![image-20240916163825072](C++学习笔记.assets/image-20240916163825072.png)
+
+correct；
+
+原因：
+在 C++ 中，如果没有明确指定访问说明符，类中的成员默认为 private。这意味着 `age` 和 `arr` 都是私有的，不能直接从类外部访问或初始化。
+
+还可以这样干：
+![image-20240916164512963](C++学习笔记.assets/image-20240916164512963.png)
+
+***
+
+***
+
+![image-20240916164656642](C++学习笔记.assets/image-20240916164656642.png)
+
+花括号初始化不允许这样做；
+
+***
+
+了解一下initizer::list
+
+***
+
+![image-20240916164900866](C++学习笔记.assets/image-20240916164900866.png)
+
+getMem第一个参数应该改为int*&p,这样p就可以和ip联动，然后ip就得到了空间，for循环也就可以继续进行；
+
+ip动了后，前面的内存会丢掉地址，从而无法delete，所以delete ip会崩掉，另外，ip还应该置空；
+
+所以ip应该提前使用另一个指针来保存，然后delete他，再置空；
+
+你申请了五个空间，结果循环了10次，所以堆越界了；
+
+解释：
+![image-20240916170339870](C++学习笔记.assets/image-20240916170339870.png)
+
+学会在代码跑起来后，点`调试`-`窗口`-`内存`，然后列改为4（每行就是一个int，包括四个字节，里面放的是十六进制数）；
+
+```
+void getMem(int* &p, int n) {
+	p = new int[n];
+}
+int main() {
+	const int n = 10;
+	int* ip = nullptr;
+
+	getMem(ip, 10);
+	int* sp = ip;
+	for (int i = 0; i < n; i++) {
+		*ip++ = i;
+	}
+	delete sp;
+	sp = ip = nullptr;
+}
+```
+
+****
+
+改正：
+![image-20240916170926030](C++学习笔记.assets/image-20240916170926030.png)
+![image-20240916171018241](C++学习笔记.assets/image-20240916171018241.png)
+
+***
+
+![image-20240916172225683](C++学习笔记.assets/image-20240916172225683.png)
+
+没太理解；
+
+***
+
+数组退化为指针？
+***
+
+![image-20240916172842333](C++学习笔记.assets/image-20240916172842333.png)
+
+***
+
+以引用返回的条件就是返回的对象不受当前的函数的结束而生命周期结束；
+
+***
+
+![image-20240916173721563](C++学习笔记.assets/image-20240916173721563.png)
+
+最好改为auto&返回。否则你使用max(10,12.23);就会出现返回12的问题；
+***
+
+![image-20240916174027930](C++学习笔记.assets/image-20240916174027930.png)
+
+ar会被推导为int*类型：
+![image-20240916174424220](C++学习笔记.assets/image-20240916174424220.png)
+
+从而导致范围for出错；
+
+怎么改：
+![image-20240916174539668](C++学习笔记.assets/image-20240916174539668.png)
+
+加一个&，t就是arr的别名了；
+
+还有一种做法：
+![image-20240916174741083](C++学习笔记.assets/image-20240916174741083.png)
+
+给一个int N；明确在参数中告诉：我们t是数组的别名，N是大小；
+
+但其实这两种是等价的；
+
+****
+
+new出来那个指针不能判空？要用异常捕获
+
+因为申请失败不返回空，是抛异常；`new` 操作符在内存分配失败时会抛出 `std::bad_alloc` 异常，而不是返回空指针；
+
+处理new分配内存的做法：
+
+```
+#include <memory>
+#include <exception>
+std::unique_ptr<int> p;
+int main() {
+	try {
+		p = std::make_unique<int>(10);
+		// 使用 p
+	}
+	catch (const std::bad_alloc& e) {
+		std::cerr << "Memory allocation failed: " << e.what() << std::endl;
+		return 1;
+	}
+	// 不需要手动删除，unique_ptr 会自动管理内存
+}
+```
+
+```
+int main() {
+	try {
+		int* p = new int(10);
+		// 使用 p
+		delete p;
+	}
+	catch (const std::bad_alloc& e) {
+		std::cerr << "Memory allocation failed: " << e.what() << std::endl;
+		return 1;
+	}
+}
+```
+
+```
+int main() {
+	int* p = nullptr;
+	try {
+		p = new int[5]{ 1,2,3,4,5 };
+	}
+	catch (std::bad_alloc& e) {
+		cout << e.what() << endl;
+	}
+	delete p;
+	p = nullptr;
+}
+```
+
+```
+int main() {
+	int* p = new(std::nothrow)int[9];//不让你抛异常，有问题返回空指针即可
+	if (p == nullptr) {
+		cerr << "new error" << endl;
+		return 1;
+	}
+	delete p;
+}
+```
+
+***
+
+***
+
+![image-20240916180231489](C++学习笔记.assets/image-20240916180231489.png)
+
+***
+
+![image-20240916204502475](C++学习笔记.assets/image-20240916204502475.png)
+
+优化了；不调用拷贝构造
+
+***
+
+![image-20240916204656736](C++学习笔记.assets/image-20240916204656736.png)
+
+将右值绑定到右值引用延长了前者的生命周期到c的结束；
+
+***
+
+![image-20240916204849673](C++学习笔记.assets/image-20240916204849673.png)
+
+常量左值引用可以绑定右值，延长临时对象的生命周期；
+
+***
+
+![image-20240916205210240](C++学习笔记.assets/image-20240916205210240.png)
+
+***
 
 
 
@@ -2797,43 +4712,855 @@ iimap[]返回引用（就是某个数出现次数的引用），然后你对他+
 
 ![image-20240915224059359](C++学习笔记.assets/image-20240915224059359.png)
 
+### 智能指针第一部分P1-P12
 
+内存泄漏：
+![image-20240925154720984](C++学习笔记.assets/image-20240925154720984.png)
 
+还有一种情况，是无法释放，而不是没有释放：
+![image-20240925154927359](C++学习笔记.assets/image-20240925154927359.png)
 
+如上，ip的值被覆盖了，你把地址给丢了；
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+智能指针就是管理堆内存+资源（系统资源）；
 
 ***
 
-![image-20240915183336975](C++学习笔记.assets/image-20240915183336975.png)
+![image-20240925155351205](C++学习笔记.assets/image-20240925155351205.png)
 
-这三个方法用于一致性哈希，即负载均衡；
+如上15行要做三件事：第一计算MyConn类的大小，第二向堆区申请内存，第三在申请的空间中构建对象（调用构造函数），第四将地址赋值给p；
+
+***
+
+![image-20240925155747484](C++学习笔记.assets/image-20240925155747484.png)
+
+智能指针重载了operator*和operator->，使得它像指针一样使用；
+
+***
+
+RAII：
+
+![image-20240925155838072](C++学习笔记.assets/image-20240925155838072.png)
+
+即利用局部对象出作用域销毁机制来管理资源；
+
+***
+
+![image-20240925160310145](C++学习笔记.assets/image-20240925160310145.png)
+
+***
+
+```
+#include<iostream>
+using namespace std;
+class Int {
+private:
+    int _val;
+public:
+    Int(int val) :_val(val) {
+        cout << "Int()" << endl;
+    }
+    ~Int() {
+        cout << "~Int()" << endl;
+    }
+};
+class SmartPointer {
+private:
+    Int* p;
+public:
+    SmartPointer(Int* ptr):p(ptr){
+        cout << "SmartPointer()" << endl;
+    }
+    ~SmartPointer() {
+        cout << "~SmartPointer()" << endl;
+        delete p;
+    }
+};
+void fun() {
+    try {
+        SmartPointer ptr(new Int(88));
+        div(12, 0);
+    }
+    catch (const std::exception&e) {
+        cerr << e.what() << endl;
+    }
+}
+int main() {
+    fun();
+}
+```
+
+这段代码还是没有解决析构的问题；
+
+***
+
+Int *p  = new Int(90);
+
+delete p;
+
+//此时，p是一个空悬指针，delete只是释放了p的所指的空间，并没有把p自己的值改了；p仍然指向那个空间。所以我们常常p = nullptr;
+
+***
+
+![image-20240925164857967](C++学习笔记.assets/image-20240925164857967.png)
+
+```
+#include<iostream>
+using namespace std;
+class Int {
+private:
+    int _val;
+public:
+    Int() :_val(0) { cout << "无参的构造函数" << endl; }//这里无参的构造函数放出来是为了main中Int数组的构建，他要用到无参的构造
+    Int(int val) :_val(val) {
+        cout << "Int()" << endl;
+    }
+    ~Int() {
+        cout << "~Int()" << endl;
+    }
+};
+void fun(Int* p) {}
+void fun1(Int* p[]) {}
+int main() {
+    Int* p = new Int(90);
+    Int* pp = new Int[10];
+    //使用智能指针来创建Int数组:std::unique_ptr<Int[]> intArray(new Int[10]);fun(intArray.get());
+
+    fun(p);
+    fun1(&pp);
+    cout << endl;
+    delete p;
+    delete [] pp;
+}
+//如上：假设你把p和pp都传给fun，fun也不知道你是指向一个Int对象的指针还是Int对象数组的指针。上就是上图所说的裸指针存在的第一个问题。
+```
+
+FILE* fp = xxxx;
+
+fclose(fp);
+
+当程序大时，传递了多层函数你就不知道该delete fp;还是fclose(fp)；了，这就是裸指针存在的3号问题；
+
+![image-20240925171521494](C++学习笔记.assets/image-20240925171521494.png)
+
+***
+
+delete后置空否则会有悬空指针；
+
+***
+
+C98有右值但没有右值引用概念，auto_ptr诞生于此；
+
+delete p；p指向的是一个对象的地址，此时会做两件事：第一：调用指向的对象的析构函数，第二：释放指针指向的堆区的空间
+
+***
+
+```
+#include<iostream>
+using namespace std;
+class Int {
+private:
+    int _val;
+public:
+    Int() :_val(0) { cout << "无参的构造函数" << endl; }
+    explicit Int(int val) :_val(val) {
+        cout << "Int()" << endl;
+    }
+    ~Int() {
+        cout << "~Int()" << endl;
+    }
+};
+
+namespace hanxian {
+    template<class T>
+    class autoPtr {
+    private:
+        T* _p;
+    public:
+        autoPtr(T* p) :_p(p) {}
+        ~autoPtr() {delete _p;}
+    };
+}
+int fun(int i) {
+    hanxian::autoPtr<Int> ptr(new Int(89));
+    if (i < 0) {
+        throw out_of_range("i<0");
+    }
+    return i;
+}
+int main() {
+    try {
+        fun(-8);
+    }
+    catch (out_of_range& e) {
+        cout << e.what() << endl;
+    }
+    return 0;
+}
+//如上，fun函数中触发了异常，这会导致fun异常结束，结束归结束，栈帧得收回啊，ptr作为局部对象将被释放，所以它还是会调用析构函数释放资源。这是裸指针办不到的
+```
+
+****
+
+![image-20240925174310313](C++学习笔记.assets/image-20240925174310313.png)
+
+const一定要搞清楚；
+
+this指针为何自带const？类的成员函数是由对象调用的，如果this不加const，this指针如果在刚进来就被置空，也就是说，没人再能找到调用者的位置了，你接下来怎么玩？所以我们要求this指针（存放对象的地址）不可改变，你可以改变对象的值，但是我指向的是对象，你不能改。上述代码相当于A a; a.fun();//相当于fun(&a);
+
+函数是常方法，他是说对象的成员不可修改；
+
+**更关键的：如果A类有一个成员是一个指针类型，那么就算你this有自带的const，方法也是const的，那么这个指针指向的值仍然是可以改动的。const没有穿透能力。那么如果这个指针指向的内容确实不能改？怎么办？请你在设计类的时候加上const T*p;这下解引用p就改不了了。或者可以在return这个指针的时候以constT✳返回，这样这个指针的值就不会被改变了**
+
+**总结一句话：const方法保护了类内成员（包括指针自身的值）不被改变，而返回值constT*保护了这个指针的所指之物不被改变；**
+
+***
+
+智能指针中get方法返回被管理的指针。
+
+**智能指针点是智能指针自身的方法，箭头是所指之物的方法。**
+
+auto_ptr应该实现的函数：
+重载*和重载箭头
+
+![image-20240925182305538](C++学习笔记.assets/image-20240925182305538.png)
+
+还有一个swap函数；
+
+reset是析构指向的对象，另指向一个新的对象；
+
+release就是我智能指针不再指向这个对象了，我置空，然后把那个对象的地址交出来，你接受继续养着它；
+
+swap传入另一个智能指针，他和调用者交换所指之物；
+
+***
+
+```
+//实现了auto—ptr的部分功能。
+#include<iostream>
+using namespace std;
+class Int {
+private:
+    int _val;
+public:
+    Int() :_val(0) { cout << "无参的构造函数" << endl; }
+    explicit Int(int val) :_val(val) {
+        cout << "Int()" << endl;
+    }
+    ~Int() {
+        cout << "~Int()" << endl;
+    }
+    int& Value() {
+        return _val;
+    }
+    void PrintInt()const {
+        cout << _val << endl;
+    }
+    const int& Value()const {
+        cout << _val << endl;
+    }
+};
+
+namespace hanxian {
+    template<class _Ty>
+    class autoPtr {
+    private:
+        typedef _Ty elem_Type;
+        _Ty* _M_ptr;//Int* p;
+    public:
+        explicit autoPtr(_Ty* p) :_M_ptr(p) {}
+        ~autoPtr() {delete _M_ptr;}
+        _Ty& operator*()const {
+            return *_M_ptr;
+        }
+        _Ty* operator->()const {
+            return _M_ptr;
+        }
+        _Ty* get()const {
+            return _M_ptr;
+        }
+        void swap(autoPtr& p){
+            swap(p._M_ptr,_M_ptr);
+        }
+        void reset(_Ty* p = nullptr){
+            delete _M_ptr;
+            _M_ptr = p;
+        }
+        _Ty* release(){
+            _Ty* tmp = _M_ptr;
+            _M_ptr = nullptr;
+            return tmp;
+        }
+    };
+}
+void fun() {
+    hanxian::autoPtr<Int> ptr(new Int(1));
+    //Int obj(88);
+    //ptr.reset(&obj);//这是错误的做法，你将栈上对象给它，fun结束时obj西沟一次，ptr析构时又一次，就出事了。
+    /*在你的代码中，ptr.reset(&obj) 这行语句试图将 ptr 的所有权转移到一个栈上的对象 obj。当 fun 函数结束时，obj 会自动析构，而 ptr 仍然持有 obj 的地址，这就会导致一个悬空指针。当程序试图通过 ptr 访问内存时，就会发生未定义的行为，甚至导致程序崩溃。*/
+    ptr.reset(new Int(9));//请给堆上对象
+    ptr->PrintInt();
+}
+int main() {
+    fun();
+}
+```
+
+***
+
+值语义：拷贝构造对象后各自不影响；
+
+![image-20240925201400487](C++学习笔记.assets/image-20240925201400487.png)
+
+上述WriteFile不具有值语义，不得拷贝；因为你深拷贝之后不可能拷贝一个a.txt出来给你用，反而让两个FILE*指针指向了同一个文件a.txt;
+
+它是：对象语义（引用语义）的对象，不准拷贝，不准=赋值；
+
+![image-20240925201545294](C++学习笔记.assets/image-20240925201545294.png)
+
+***
+
+auto_ptr存在问题，他的拷贝构造的设计使得凡是遇到拷贝的地方，原来的指针的指向被置空；
+
+```
+namespace hanxian {
+    template<class _Ty>
+    class autoPtr {
+    private:
+        typedef _Ty elem_Type;
+        _Ty* _M_ptr;//Int* p;
+    public:
+        explicit autoPtr(_Ty* p) :_M_ptr(p) {}
+        ~autoPtr() {delete _M_ptr;}
+        _Ty& operator*()const {
+            return *_M_ptr;
+        }
+        _Ty* operator->()const {
+            return _M_ptr;
+        }
+        _Ty* get()const {
+            return _M_ptr;
+        }
+        void swap(autoPtr& p){
+            std::swap(p._M_ptr,_M_ptr);
+        }
+        void reset(_Ty* p = nullptr){
+            delete _M_ptr;
+            _M_ptr = p;
+        }
+        _Ty* release(){
+            _Ty* tmp = _M_ptr;
+            _M_ptr = nullptr;
+            return tmp;
+        }
+        //autoPtr(const autoPtr& it) {
+        //    //this->_M_ptr = it._M_ptr;//浅拷贝会delete两次
+        //    _M_ptr = new _Ty(*it);//*it相当于拿到了Int对象，然后拷贝构造给_Ty
+        //    //但是这样深拷贝无法对于对象语义对象进行处理，因为他们没有拷贝构造，所以出现了下面这种拷贝：
+        //}
+        autoPtr(autoPtr& it) {
+            _M_ptr = it._M_ptr;
+            it._M_ptr = nullptr;
+        }
+        autoPtr& operator=(autoPtr& it) {
+            if (&it != this) {
+                delete _M_ptr;
+                _M_ptr = it._M_ptr;
+                it._M_ptr = nullptr;
+            }
+            return *this;
+        }
+        //这里还有一个问题：auto_ptr的拷贝构造和拷贝赋值反直觉。它偷偷转移了资源。（delete _M_ptr；以及拷贝构造的it._M_ptr = nullptr;）
+    };
+}
+void fun(hanxian::autoPtr<int> ptr) {
+    cout << *ptr << endl;    
+}
+int main() {
+    hanxian::autoPtr<int> ptr(new int(1));
+    fun(ptr);
+    cout << *ptr << endl;
+}
+```
+
+以上是auto_ptr存在的一个问题，还有一个，他无法处理连续空间：
+```
+    hanxian::autoPtr<Int> p(new Int[10]);
+申请10个Int大小空间，释放时~autoPtr() {delete _M_ptr;}相当于delete p;而不是delete [] p;在 C++ 中，当使用 new[] 分配数组时，必须使用 delete[] 来释放，否则会导致未定义行为，通常表现为内存泄漏或程序崩溃。
+所以auto_ptr源码就是这样实现的，所以auto_ptr管理连续空间(比如new Int[10]这样一个数组指针)是有问题的。这是它的不足。
+但是你如果删掉Int的析构函数，此时代码就可以过，因为new时，对于没有析构函数的类型不会填充个数，delete时直接释放空间即可不再管这个对象自身资源有没有释放。但是内存可是确实泄露了，只是代码编过了；
+```
+
+new是很麻烦的，你是内置类型，好说，我直接释放你在堆上的空间，对于自定义类型，因为它里面可能会有指针啊等资源，所以delete时还需要调用堆上这些对象的析构函数，确保你析构，你管理的资源也析构。这就是上述删掉Int析构代码可以过的原因，但内存确实泄露了。
+
+此时删掉~Int（）后，你如果继承了：
+```
+class A{
+	A(){}
+	~A(){}
+};
+class Int:public A{//..};
+```
+
+这时系统会给Int添加一个默认析构，此时你就过不了了；
+
+***
+
+![image-20240925211905678](C++学习笔记.assets/image-20240925211905678.png)
+
+
+
+其中第二点：
+![image-20240925212835044](C++学习笔记.assets/image-20240925212835044.png)
+
+如上代码，它会调用const左值引用的push_back；而auto_ptr没有带const的左值引用。
+
+所以STL中装不了auto_ptr；
+
+正因如此：
+![image-20240925213024924](C++学习笔记.assets/image-20240925213024924.png)
+
+来了三个新的；
+
+***
+
+unique_ptr:
+
+![image-20240925213128579](C++学习笔记.assets/image-20240925213128579.png)
+
+
+
+![image-20240925213156816](C++学习笔记.assets/image-20240925213156816.png)
+
+![image-20240925213930606](C++学习笔记.assets/image-20240925213930606.png)
+
+explicit不允许隐式转换和上图的赋值构建；
+
+unique_ptr不允许=和拷贝构造：
+
+![image-20240925214144003](C++学习笔记.assets/image-20240925214144003.png)
+
+这样：
+```
+unique_ptr<Int> p1(p2);//error
+unique_ptr<Int> p3;
+p3 = p4;//error
+```
+
+就不可使用，达到独占对象所有权；
+
+***
+
+![image-20240925214341608](C++学习笔记.assets/image-20240925214341608.png)
+
+他有上述几个成员函数；
+
+
+
+
+
+这是一个很好的问题！让我来详细解释一下：
+
+1. 内存泄漏的定义：
+   内存泄漏发生在程序动态分配了内存，但在不再需要这块内存时没有正确释放它。
+
+2. 内置类型和内存泄漏：
+   即使是像 int 这样的内置类型，如果使用 new 在堆上分配了内存，也可能发生内存泄漏。这与是否有析构函数无关。
+
+3. 为什么会发生内存泄漏：
+   内存泄漏是由于没有正确调用 delete 或 delete[]，而不是因为缺少析构函数。
+
+4. 示例：
+
+   ```cpp
+   int* p = new int;  // 在堆上分配内存
+   // 如果这里没有 delete p;
+   // 就会发生内存泄漏
+   ```
+
+   即使 int 没有析构函数，这里仍然会发生内存泄漏。
+
+5. 析构函数的作用：
+   析构函数主要用于清理对象自身拥有的资源（如动态分配的内存、打开的文件等）。它不负责释放对象本身占用的内存。
+
+6. 内置类型vs自定义类型：
+   - 对于内置类型，我们只需要关心内存的分配和释放。
+   - 对于自定义类型，除了内存的分配和释放，还需要考虑对象自身资源的清理（这是析构函数的工作）。
+
+7. 正确的内存管理：
+   无论是内置类型还是自定义类型，只要使用 new 分配了内存，就必须使用对应的 delete 来释放：
+
+   ```cpp
+   int* p = new int;
+   // 使用 p
+   delete p;  // 正确释放内存
+   
+   int* arr = new int[10];
+   // 使用 arr
+   delete[] arr;  // 正确释放数组内存
+   ```
+
+8. 智能指针：
+   在现代 C++ 中，推荐使用智能指针来自动管理内存，避免手动 delete 带来的问题：
+
+   ```cpp
+   #include <memory>
+   
+   std::unique_ptr<int> p = std::make_unique<int>(5);
+   // p 会在离开作用域时自动释放内存
+   
+   std::unique_ptr<int[]> arr = std::make_unique<int[]>(10);
+   // arr 会在离开作用域时自动释放数组内存
+   ```
+
+总结：
+内置类型如 int 在堆上分配时，确实可能发生内存泄漏。这不是因为缺少析构函数，而是因为没有正确释放分配的内存。无论是内置类型还是自定义类型，只要使用 new 分配了内存，就需要负责正确释放这些内存，否则都会导致内存泄漏。使用智能指针可以大大简化内存管理，减少内存泄漏的风险。
+
+```
+unique_ptr不允许拷贝构造+赋值；
+但是移动构造+移动赋值可以；
+```
+
+![image-20240926200424086](C++学习笔记.assets/image-20240926200424086.png)
+
+如上，我们delete了拷贝构造函数，所以OS不再提供移动构造，移动构造要自己编写了；
+
+***
+
+```
+//unique_ptr的模拟实现
+#include<iostream>
+#include<memory>
+
+using namespace std;
+class Int {
+private:
+    int _val;
+public:
+    Int() :_val(0) { cout << "无参的构造函数" << endl; }
+    explicit Int(int val) :_val(val) {
+        cout << "Int()" << endl;
+    }
+    ~Int() {
+        cout << "~Int()" << endl;
+    }
+    int& Value() {
+        return _val;
+    }
+    void PrintInt()const {
+        cout << _val << endl;
+    }
+    const int& Value()const {
+        cout << _val << endl;
+    }
+    Int& operator=(const Int& other) {
+        cout << "operator=()" << endl;
+        if (this != &other) {
+            this->_val = other._val;
+        }
+        return *this;
+    }
+    Int(const Int& other) :_val(other._val){
+        cout << "拷贝构造" << endl;
+    }
+};
+
+namespace hanxian {
+    template<class _Ty>
+    class uniquePtr {
+    public:
+        using element_type = _Ty;
+        using pointer = _Ty*;
+    private:
+        pointer mPtr;
+    public:
+        uniquePtr(const uniquePtr&) = delete;//unique_ptr没有拷贝构造和赋值
+        uniquePtr& operator=(const uniquePtr&) = delete;
+        uniquePtr(uniquePtr&& other) {//移动构造不要写const uniquePtr&&other，因为你要动他（转移它的资源）
+            mPtr = other.mPtr;
+            other.mPtr = nullptr;
+        }
+        uniquePtr& operator=(uniquePtr&& other) {//移动赋值也是动资源
+            if (this != &other) {
+                //1.
+                //delete mPtr;
+                //mPtr = other.mPtr;
+                //other.mPtr = nullptr;
+                //2.
+                reset(other.release());
+            }
+            return *this;
+        }
+        explicit uniquePtr(pointer p = nullptr) :mPtr(p) { cout << "uniquePtr()" << endl; }
+        ~uniquePtr() {
+            delete mPtr;
+        }
+        pointer release() {
+            pointer old = mPtr;
+            mPtr = nullptr;
+            return old;
+        }
+        pointer get()const {
+            return mPtr;
+        }
+        void reset(pointer p = nullptr) {
+            if (mPtr) {
+                delete mPtr;
+            }
+            mPtr = p;
+        }
+        void swap(uniquePtr& it) {
+            std::swap(it.mPtr, this->mPtr);
+        }
+        explicit operator bool()const {
+            return mPtr != nullptr;
+        }
+        _Ty* operator->() {
+            return mPtr;
+        }
+        _Ty& operator*()const {
+            return *mPtr;
+        }
+    };
+}
+void test() {
+    hanxian::uniquePtr<Int> ap(new Int(10));
+    hanxian::uniquePtr<Int> bp(new Int(89));
+    if (ap) {
+        ap->PrintInt();
+    }
+    if (bp) {//if(bp.operator bool())
+        bp->PrintInt();
+    }
+    bp=  std::move(ap);
+}
+int main() {
+    test();
+}
+```
+
+***
+
+unique_ptr管理动态数组：
+部分特化/完全特化，不允许在模板列表中用缺省值；
+
+```
+#include<iostream>
+#include<memory>
+
+using namespace std;
+class Int {
+private:
+    int _val;
+public:
+    Int() :_val(0) { cout << "无参的构造函数" << endl; }
+    explicit Int(int val) :_val(val) {
+        cout << "Int()" << endl;
+    }
+    ~Int() {
+        cout << "~Int()" << endl;
+    }
+    int& Value() {
+        return _val;
+    }
+    void PrintInt()const {
+        cout << _val << endl;
+    }
+    const int& Value()const {
+        cout << _val << endl;
+    }
+    Int& operator=(const Int& other) {
+        cout << "operator=()" << endl;
+        if (this != &other) {
+            this->_val = other._val;
+        }
+        return *this;
+    }
+    Int(const Int& other) :_val(other._val){
+        cout << "拷贝构造" << endl;
+    }
+};
+
+namespace hanxian {
+	//泛化删除器
+    template<class _Ty>
+    struct my_default_deleter{
+        void operator()(_Ty* p)const {
+            delete p;
+        }
+    };
+    //特化删除器
+    template<class _Ty>//专门针对数组的模板特化（为特定的类型提供特殊的实现）
+    struct my_default_deleter<_Ty[]> {
+        void operator()(_Ty* p)const {
+            delete[]p;
+        }
+    };
+	//泛化版本：
+    template<class _Ty,class _Dx = my_default_deleter<_Ty> >
+    class uniquePtr {
+    public:
+        using element_type = _Ty;
+        using pointer = _Ty*;
+        using deleter_type = _Dx;
+    private:
+        pointer mPtr;
+        deleter_type mDeleter;
+    public:
+        uniquePtr(const uniquePtr&) = delete;//unique_ptr没有拷贝构造和赋值
+        uniquePtr& operator=(const uniquePtr&) = delete;
+        uniquePtr(uniquePtr&& other) {//移动构造不要写const uniquePtr&&other，因为你要动他（转移它的资源）
+            mPtr = other.mPtr;
+            other.mPtr = nullptr;
+        }
+        uniquePtr& operator=(uniquePtr&& other) {//移动赋值也是动资源
+            if (this != &other) {
+                //1.
+                //delete mPtr;
+                //mPtr = other.mPtr;
+                //other.mPtr = nullptr;
+                //2.
+                reset(other.release());
+            }
+            return *this;
+        }
+        explicit uniquePtr(pointer p = nullptr) :mPtr(p) { cout << "uniquePtr()" << endl; }
+        ~uniquePtr() {
+            reset();
+        }
+        pointer release() {
+            pointer old = mPtr;
+            mPtr = nullptr;
+            return old;
+        }
+        pointer get()const {
+            return mPtr;
+        }
+        _Dx& get_deleter(){
+            return mDeleter;//返回删除器对象
+        }
+        const _Dx& get_deleter()const {
+            return mDeleter;
+        }
+        void reset(pointer p = nullptr) {
+            if (mPtr) {
+                mDeleter(mPtr);//mDeleter.operator()(this->mPtr);
+            }
+            mPtr = p;
+        }
+        void swap(uniquePtr& it) {
+            std::swap(it.mPtr, this->mPtr);
+            std::swap(it.mDeleter, this->mDeleter);
+        }
+        explicit operator bool()const {
+            return mPtr != nullptr;
+        }
+        _Ty* operator->()const {
+            return mPtr;
+        }
+        _Ty& operator*()const {
+            return *mPtr;
+        }
+    };
+	//特化版本：
+    template<class _Ty, class _Dx>
+    class uniquePtr<_Ty[],_Dx> {
+    public:
+        using element_type = _Ty;
+        using pointer = _Ty*;
+        using deleter_type = _Dx;
+    private:
+        pointer mPtr;
+        deleter_type mDeleter;
+    public:
+        uniquePtr(const uniquePtr&) = delete;//unique_ptr没有拷贝构造和赋值
+        uniquePtr& operator=(const uniquePtr&) = delete;
+        uniquePtr(uniquePtr&& other) {//移动构造不要写const uniquePtr&&other，因为你要动他（转移它的资源）
+            mPtr = other.mPtr;
+            other.mPtr = nullptr;
+        }
+        uniquePtr& operator=(uniquePtr&& other) {//移动赋值也是动资源
+            if (this != &other) {
+                //1.
+                //delete mPtr;
+                //mPtr = other.mPtr;
+                //other.mPtr = nullptr;
+                //2.
+                reset(other.release());
+            }
+            return *this;
+        }
+        explicit uniquePtr(pointer p = nullptr) :mPtr(p) { cout << "uniquePtr()" << endl; }
+        ~uniquePtr() {
+            reset();
+        }
+        pointer release() {
+            pointer old = mPtr;
+            mPtr = nullptr;
+            return old;
+        }
+        pointer get()const {
+            return mPtr;
+        }
+        _Dx& get_deleter() {
+            return mDeleter;//返回删除器对象
+        }
+        const _Dx& get_deleter()const {
+            return mDeleter;
+        }
+        void reset(pointer p = nullptr) {
+            if (mPtr) {
+                mDeleter(mPtr);//mDeleter.operator()(this->mPtr);
+            }
+            mPtr = p;
+        }
+        void swap(uniquePtr& it) {
+            std::swap(it.mPtr, this->mPtr);
+            std::swap(it.mDeleter, this->mDeleter);
+        }
+        explicit operator bool()const {
+            return mPtr != nullptr;
+        }
+        _Ty* operator->()const = delete;//数组不再允许使用箭头和解引用访问
+        _Ty& operator*()const = delete;//转而加一个[]访问
+        _Ty& operator[](const size_t i)const {
+            //此处也可以加越界检查
+            return mPtr[i];//return get()[i];
+        }
+
+    };
+
+
+}
+void test() {
+    hanxian::uniquePtr<Int> ap(new Int(10));
+    hanxian::uniquePtr<Int[]> bp(new Int[10]);
+    //    template<class _Ty,class _Dx = my_default_deleter<_Ty> >    class uniquePtr{};
+    //    template<class _Ty, class _Dx>    class uniquePtr<_Ty[],_Dx>{};
+
+    //774行：。模板参数匹配特化条件，编译器会优先选择特化版本。此时_Dx用泛化版本的_Dx的缺省值
+    //“my_default_deleter<_Ty>”，然后把其中的_Ty换成_Ty[]
+    //这就是编译时候的推演
+
+}
+int main() {
+    test();
+}
+```
+
+![image-20240926211219387](C++学习笔记.assets/image-20240926211219387.png)
+
+***
+
+****
+
+![image-20240926222832440](C++学习笔记.assets/image-20240926222832440.png)
+
+因为你把拷贝构造删了，所以移动构造也没了，移动构造要自己写；
+
+***
+
+![image-20240926222919670](C++学习笔记.assets/image-20240926222919670.png)
 
 
 
@@ -2854,6 +5581,119 @@ iimap[]返回引用（就是某个数出现次数的引用），然后你对他+
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+![image-20240925235741455](C++学习笔记.assets/image-20240925235741455.png)
+
+```
+0. 写在前面        自从购入了某双网口小主机用作软路由后，lz一发不可收拾，在家陆续搭建了个人服务器以及其上搭载的各类服务，包括但不限于jellyfin(影音流媒体)，next_terminal(堡垒机与远程连接管理和共享),lms(音乐播放器)，alist(网盘管理)，kodbox(可道云，云文件管理)，qbit(bt下载),jupyter(代码管理和共享),bitwarden(密码管理),frpc(内网穿透)等。        众所周知，国内是很难获取公网ip的，对于建站等需备案的服务要求也极其严格，以上也是曾经很大程度劝退lz折腾这些的因素。但经研究发现，利用恰当的工具及配置，是很容易绕开所有的限制的，因此本文也主要是分享这个模式，希望能够对大家有所启发和帮助，也欢迎大家多多交流。        最终我们期望达成的效果为，使用同一个域名，在局域网外可以正常访问局域网内的服务（但可能速度较慢，因为是有cf的代理），在局域网内也可以使用该域名正常访问同一个服务，但走的路径是局域网内直连，而非出局域网走cf的代理再绕回来。
+1. 需要准备的材料        1.1 一个域名，最好长期使用，并解析到cf（必备）。注：cf即cloudflare，可以白嫖众多服务，大家都亲切地称呼其为大善人，后文中大家可以发现其发挥着无法替代的作用，也是本操作的核心。当然享受这一切的前提是需要有域名解析进去。建议大家在海外的域名平台上购买域名，一是长期使用价格一般比国内低，二是海外对建站这些事没这么敏感，不需要到处搞身份验证备案什么的，相对轻松些。毕竟我们所有的服务也都自己用，并不打算在国内备案。        1.2 至少一台linux服务器（必备）。作为我们所需要的服务所搭建的平台，如果有一定linux/docker基础，应该可以发现在linux架构下搭建和管理自己的服务端省时省心。毕竟管理服务端完全用不到图形化桌面。        1.3 软路由（必备，或可替换为具备dns反代功能的路由器，常开）。软路由一般也为linux服务器，使用软路由可以极大丰富我们对网络的操控和管理。必备软路由的原因是需要将我们的域名在内网解析至反向代理服务端。        1.4 内网反向代理服务端（必备，常开）。该服务端必须常年运行，作用为在内网将子域名分发至各个服务。        1.2-1.4所提到的机子可以是同一台，这也是大家常提到的AIO(All In One)，不过操作不当可能会变成AIB(All In Boom)，所有东西一起挂掉，希望大家谨慎
+2.操作步骤        2.1 使用cf的Tunnels功能进行服务端内网穿透        该步骤目的是能够使内网服务端在公网进行访问，具体操作步骤为：        2.1.1 在内网某台机子上建立隧道客户端：        登录cf，左侧边栏单击选择Zero Trust，进入后左侧边栏单击Networks下三角，进一步弹出的选项里单击选择Tunnels，界面点击Create a tunnel，根据cf提供的步骤在自己的服务端/软路由/win客户端/其他设备上建立隧道，这个建立隧道的设备需要满足的要求是：能够在内网访问所有需要访问的服务，且在外网访问内网服务时，这个设备需满足开启且在运行cf Tunnel程序的状态。        2.1.2 为某一个需要公网访问的服务建立隧道：        建好隧道后，该页面点击对应的Tunnel name，在右边弹出栏中选择edit，弹出界面上方选择Public Hostname，页面切换后点击Add a public hostname，弹出界面中，Subdomain为子域名，Domain选择解析到cf的域名，Path留空。下方Type选http，URL填写内网访问该服务的IP地址及端口。或者说，在内网访问该服务时地址栏写啥这里就写啥。填完后右下角Save Hostname        做完这一步之后，这一个服务应该就可以用你的域名在公网进行访问了，一般国内的延迟在200ms左右，大家可以进行测试。        2.1.3 重复2.1.2的步骤，为所有的服务搭建隧道
+        2.2 使用内网反向代理服务端，配合软路由，将域名解析至内网ip和端口        经过以上操作后，我们在局域网外应该是能正常使用域名访问我们的服务了，在局域网内也可以正常访问，但是相比局域网内ip+端口的模式会慢不少，因为流量实际上是走cf绕了一圈回来。因此采用软路由dns反向代理解析域名至内网反代服务端+内网反代服务端反向代理解析子域名至对应的服务上，这一思路可以使我们用同一个域名在内网走内网链路访问服务。        2.2.1 软路由dns反向代理解析域名至内网反代服务端        软路由系统lz选择ikuai，主要因为配置简单+功能丰富。Ikuai环境下操作步骤为：网络设置-DNS设置-DNS设置-开启DNS加速服务-开启强制客户端DNS代理-最下方添加DNS反向代理。域名为*.+你解析到cf的域名，解析类型ipv4，解析地址为内网反代服务端的IP地址。        2.2.2 内网反代服务端反向代理解析子域名至对应的服务上        内网反代服务端lz选择在软路由docker下架设的lucky服务，当然也可以选择nginx等其他服务。lz是小白，搞不定nginx的配置文件，lucky全图形化配置，方便友好，资源占用也低，强烈推荐。        具体操作步骤如下：在lucky面板左侧选择web服务，点击添加web服务规则，监听类型全选，监听端口443（https默认端口）。之后在创建的规则下添加子规则，前端地址为2.1为访问该服务在局域网外用到的地址（即子域名），后端地址为局域网内直接访问该服务用到的地址（局域网内ip+端口），其他的都不用改。        进行测试可以发现，在局域网内也可以用域名快速访问对应服务了，使用tracert(win平台)或traceroute(linux平台)对域名进行追踪可以发现访问路径为内网路径。
+        经过以上步骤，即可以达成我们的目标，即同一域名在内外网，均以最佳的方式访问同一个服务。在该策略下，大家可以发现全程没有使用任何公网ip，所有的域名也仅仅只是解析到cf的cdn节点，因此该策略具备极强的普适性。甚至说，即使有了公网ip，因为大部分的服务其实不刚需低延迟，结合曾经爆出新闻运营商可能会扫描所有端口看有没有人私自建站，使用cf的方案甚至也优于公网ip。毕竟，公网ip还有更重要的用途，尤其是刚需低延迟的时候（没错说的就是你，RDP）。
+3. 写在后面：该方案的不足与补充        3.1 该方案主要解决家庭组网，在校园网环境下，该策略其实仍不完全好用。因为校园网是个大局域网，理想环境下在校园网内且在自己在校园网内搭的局域网（如宿舍自建的wifi等）外时，也应当直接走校园网访问自己的服务，而不是从cf绕一圈。但显然，校园网的绝大多数使用者无法在校园网全网的环境下配置dns反代和静态路由。这一情况是否有好的解决方法，也可以请大家集思广益。        3.2 RDP怎么办？        cf的服务有两个问题，一是延迟高，二是根本就不支持tcp协议，因此无法用于RDP。但在白嫖cf解决绝大多数服务的问题后，RDP显得并不那么棘手。在没有公网ip的情况下，可以白嫖市面上部分提供免费frp服务的站点。目前lz的感觉，国内最好用的是skaura frp，白嫖的情况下每月10g基础流量+签到赠送流量，带宽10mbps，可以创建两个免费服务。大家选择离自己近的节点，延迟基本可以控制在100ms内，远程桌面是差不多够用了。使用skaura提供的frp配置文件与自己的frpc客户端进行反代映射即可。        当然，rdp也可以做到同一个连接配置在局域网内走局域网，在局域网外走skaura的效果。在cf将子域名做cname解析至frp提供的域名，然后在lucky内做端口转发即可。        3.3 关于软路由        软路由功能强大，包括但不限于多条wan聚合，流控分流设置，自动化科学上网，静态路由配置，dns代理等等，推荐大家研究和使用。        一般情况下软路由需要至少有两个板载的网口，这件事情在一般的电脑上并不常见。当然对于只有单网口的主机也可以做软路由，使用usb转网口即可，但该操作配置复杂，需要在无网络或非软路由接入其他路由lan口的情况下做usb网口的驱动，不建议大家轻易尝试。
+欢迎大家互相交流指正
+//https://bbs.pku.edu.cn/v2/post-read.php?bid=35&threadid=18825472
+```
+
+https://gk.onceforall.cc/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## other
 
 迭代器失效？
 
@@ -2864,6 +5704,47 @@ Lambda表达式与仿函数？
 构造函数的任务都有啥？创建对象+初始化对象的数据成员+类型转换；
 
 指针和引用的区别？
+
+```
+int sum{};
+for(int i=1;i<=100;i++)
+	sum+=i;
+您提出的这段代码，在经过现代编译器的优化后，确实可能在编译期就计算出结果，从而在运行时直接将结果赋值给 `sum`，使得循环体在实际执行时变得“无效”。
+
+**为什么会出现这种情况？**
+
+1. **编译器优化技术：**
+   * **常量传播：** 循环变量 `i` 的范围和步长都是常量，编译器可以很容易地推断出循环的次数和每次循环的增量。
+   * **等差数列求和公式：** 对于这种简单的等差数列求和，编译器可以直接应用数学公式计算出结果。
+   * **循环展开和强度削减：** 编译器可能将循环展开，然后通过一些数学变换，将多次加法操作合并成一次或几次乘法操作，从而提高效率。
+   * **死代码消除：** 如果循环体中除了 `sum += i` 之外没有其他有意义的语句，那么整个循环体都可以被视为死代码，直接删除。
+
+2. **O1 优化级别：**
+   * O1 优化级别通常会开启一些基本的优化选项，足以将这种简单的循环优化到编译期计算。
+
+**编译期计算的优势**
+
+* **效率提升：** 避免了运行时的循环开销，直接使用计算结果，大幅提高程序执行速度。
+* **代码简化：** 消除了不必要的循环代码，使得代码更简洁易读。
+
+**编译器如何实现编译期计算**
+
+编译器在编译过程中会进行一系列的分析和优化，包括：
+
+* **语法分析：** 将源代码解析成抽象语法树（AST）。
+* **语义分析：** 检查代码的语义正确性，并进行类型检查。
+* **中间代码生成：** 将 AST 转换成中间代码，如三地址码。
+* **优化：** 对中间代码进行各种优化，包括常量传播、死代码消除、循环优化等。
+* **目标代码生成：** 将优化后的中间代码转换成目标机器码。
+
+在优化阶段，编译器会使用各种算法和数据结构来分析代码，并进行相应的变换。
+
+**影响编译期计算的因素**
+
+* **编译器版本和优化选项：** 不同的编译器和优化选项会产生不同的优化效果。
+* **代码复杂度：** 对于更复杂的循环和表达式，编译器可能无法进行完全的编译期计算。
+* **硬件架构：** 不同的硬件架构可能对编译器的优化策略产生影响。
+```
 
 
 
