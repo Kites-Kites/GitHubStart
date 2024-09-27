@@ -4712,7 +4712,7 @@ int main() {
 
 ![image-20240915224059359](C++学习笔记.assets/image-20240915224059359.png)
 
-### 智能指针第一部分P1-P12
+### 智能指针第一部分P1-P13
 
 内存泄漏：
 ![image-20240925154720984](C++学习笔记.assets/image-20240925154720984.png)
@@ -5560,7 +5560,873 @@ int main() {
 
 ***
 
-![image-20240926222919670](C++学习笔记.assets/image-20240926222919670.png)
+自己实现的make_unique，要很好支持数组类型初始化，还需要做一些工作：
+
+![image-20240927113801194](C++学习笔记.assets/image-20240927113801194.png)
+
+如上，试图使用数组和非数组（模板特化）区分初始化，不行，所以使用了模板元编程:
+![image-20240927114538960](C++学习笔记.assets/image-20240927114538960.png)
+
+**上图最后一行的`_Ty [] ====>_Ty`;**
+
+***
+
+![image-20240927115743866](C++学习笔记.assets/image-20240927115743866.png)
+
+具体调用规则就是上图，具体你也可以使用`反汇编`查看。上图的Int int int 都是类型参数，0是非类型参数；
+
+***
+
+面试时：
+![image-20240927120031469](C++学习笔记.assets/image-20240927120031469.png)
+
+给面试官讲到make_unique就写出上述不是模板元编程的版本，红框中仅支持非数组类型；如果要深入问数组类型怎么实现，请写出上上图的两个模板元编程版本；
+
+****
+
+AI和我编写的unique_ptr:
+
+````
+#include<iostream>
+#include<memory>
+
+using namespace std;
+class Int {
+private:
+    int _val;
+public:
+    Int() :_val(0) { cout << "Int()" << endl; }
+    Int(int val) :_val(val) {
+        cout << "Int(int val)" << endl;
+    }
+    Int(int a, int b) :_val(a + b) {
+        cout << "Int(int a,int b)" << endl;
+    }
+    ~Int() {
+        cout << "~Int()" << endl;
+    }
+    int& Value() {
+        return _val;
+    }
+    void PrintInt()const {
+        cout << _val << endl;
+    }
+    const int& Value()const {
+        cout << _val << endl;
+    }
+    Int& operator=(const Int& other) {
+        cout << "operator=()" << endl;
+        if (this != &other) {
+            this->_val = other._val;
+        }
+        return *this;
+    }
+    Int(const Int& other) :_val(other._val){
+        cout << "拷贝构造" << endl;
+    }
+};
+
+namespace hanxian {
+    template<class _Ty>
+    struct my_default_deleter{
+        void operator()(_Ty* p)const {
+            delete p;
+        }
+    };
+    template<class _Ty>//专门针对数组的模板特化（为特定的类型提供特殊的实现）
+    struct my_default_deleter<_Ty[]> {
+        void operator()(_Ty* p)const {
+            delete[]p;
+        }
+    };
+
+    template<class _Ty,class _Dx = my_default_deleter<_Ty> >
+    class uniquePtr {
+    public:
+        using element_type = _Ty;
+        using pointer = _Ty*;
+        using deleter_type = _Dx;
+    private:
+        pointer mPtr;
+        deleter_type mDeleter;
+    public:
+        uniquePtr(const uniquePtr&) = delete;//unique_ptr没有拷贝构造和赋值
+        uniquePtr& operator=(const uniquePtr&) = delete;
+        uniquePtr(uniquePtr&& other) {//移动构造不要写const uniquePtr&&other，因为你要动他（转移它的资源）
+            mPtr = other.mPtr;
+            other.mPtr = nullptr;
+        }
+        uniquePtr& operator=(uniquePtr&& other) {//移动赋值也是动资源
+            if (this != &other) {
+                //1.
+                //delete mPtr;
+                //mPtr = other.mPtr;
+                //other.mPtr = nullptr;
+                //2.
+                reset(other.release());
+            }
+            return *this;
+        }
+        explicit uniquePtr(pointer p = nullptr) :mPtr(p) { cout << "uniquePtr()" << endl; }
+        ~uniquePtr() {
+            reset();
+        }
+        pointer release() {
+            pointer old = mPtr;
+            mPtr = nullptr;
+            return old;
+        }
+        pointer get()const {
+            return mPtr;
+        }
+        _Dx& get_deleter(){
+            return mDeleter;//返回删除器对象
+        }
+        const _Dx& get_deleter()const {
+            return mDeleter;
+        }
+        void reset(pointer p = nullptr) {
+            if (mPtr) {
+                mDeleter(mPtr);//mDeleter.operator()(this->mPtr);
+            }
+            mPtr = p;
+        }
+        void swap(uniquePtr& it) {
+            std::swap(it.mPtr, this->mPtr);
+            std::swap(it.mDeleter, this->mDeleter);
+        }
+        explicit operator bool()const {
+            return mPtr != nullptr;
+        }
+        _Ty* operator->()const {
+            return mPtr;
+        }
+        _Ty& operator*()const {
+            return *mPtr;
+        }
+    };
+
+
+    template<class _Ty, class _Dx>
+    class uniquePtr<_Ty[],_Dx> {
+    public:
+        using element_type = _Ty;
+        using pointer = _Ty*;
+        using deleter_type = _Dx;
+    private:
+        pointer mPtr;
+        deleter_type mDeleter;
+    public:
+        uniquePtr(const uniquePtr&) = delete;//unique_ptr没有拷贝构造和赋值
+        uniquePtr& operator=(const uniquePtr&) = delete;
+        uniquePtr(uniquePtr&& other) {//移动构造不要写const uniquePtr&&other，因为你要动他（转移它的资源）
+            mPtr = other.mPtr;
+            other.mPtr = nullptr;
+        }
+        uniquePtr& operator=(uniquePtr&& other) {//移动赋值也是动资源
+            if (this != &other) {
+                //1.
+                //delete mPtr;
+                //mPtr = other.mPtr;
+                //other.mPtr = nullptr;
+                //2.
+                reset(other.release());
+            }
+            return *this;
+        }
+        explicit uniquePtr(pointer p = nullptr) :mPtr(p) { cout << "uniquePtr()" << endl; }
+        ~uniquePtr() {
+            reset();
+        }
+        pointer release() {
+            pointer old = mPtr;
+            mPtr = nullptr;
+            return old;
+        }
+        pointer get()const {
+            return mPtr;
+        }
+        _Dx& get_deleter() {
+            return mDeleter;//返回删除器对象
+        }
+        const _Dx& get_deleter()const {
+            return mDeleter;
+        }
+        void reset(pointer p = nullptr) {
+            if (mPtr) {
+                mDeleter(mPtr);//mDeleter.operator()(this->mPtr);
+            }
+            mPtr = p;
+        }
+        void swap(uniquePtr& it) {
+            std::swap(it.mPtr, this->mPtr);
+            std::swap(it.mDeleter, this->mDeleter);
+        }
+        explicit operator bool()const {
+            return mPtr != nullptr;
+        }
+        _Ty* operator->()const = delete;//数组不再允许使用箭头和解引用访问
+        _Ty& operator*()const = delete;//转而加一个[]访问
+        _Ty& operator[](const size_t i)const {
+            //此处也可以加越界检查
+            return mPtr[i];//return get()[i];
+        }
+
+    };
+    
+    
+    template<class _Ty, class... _Types>
+    uniquePtr<_Ty> My_make_unique(_Types&&... _Args){//将()写成<>了，我去！这是一个函数啊:void fun(){}
+        return uniquePtr<_Ty>(new _Ty(std::forward<_Types>(_Args)...));
+        //std::forward 确保了参数的完美转发，避免不必要的拷贝
+    }
+
+}
+void test() {
+    hanxian::uniquePtr<Int> ap = hanxian::My_make_unique<Int>();
+    hanxian::uniquePtr<Int> bp = hanxian::My_make_unique<Int>(12);
+    hanxian::uniquePtr<Int> cp = hanxian::My_make_unique<Int>(12,23);
+}
+
+int main() {
+    test();
+}
+//Ai的不同版本的My_make_unique,注意：下面三部分代码可以将“我去那里换掉”；
+//// 单个对象版本
+//template<class _Ty, class... _Types>
+//typename std::enable_if<!std::is_array<_Ty>::value, uniquePtr<_Ty>>::type
+//My_make_unique(_Types&&... _Args) {
+//    return uniquePtr<_Ty>(new _Ty(std::forward<_Types>(_Args)...));
+//}
+//
+//// 未知边界数组版本
+//template<class _Ty>
+//typename std::enable_if<std::is_array<_Ty>::value&& std::extent<_Ty>::value == 0, uniquePtr<_Ty>>::type
+//My_make_unique(size_t size) {
+//    typedef typename std::remove_extent<_Ty>::type U;
+//    return uniquePtr<_Ty>(new U[size]());
+//}
+//
+//// 禁用已知边界数组版本
+//template<class _Ty, class... _Types>
+//typename std::enable_if<std::extent<_Ty>::value != 0, void>::type
+//My_make_unique(_Types&&...) = delete;
+
+/*很高兴您提出这个问题。这段代码使用了 C++11 及以后版本引入的一些类型特征（type traits）和模板元编程技术。让我详细解释一下：
+
+1. C++ 版本：
+   这些特性主要是在 C++11 中引入的，但在 C++14 和 C++17 中得到了进一步的改进和扩展。
+
+2. 代码详解：
+
+```cpp
+template<class _Ty>
+typename std::enable_if<std::is_array<_Ty>::value && std::extent<_Ty>::value == 0, uniquePtr<_Ty>>::type
+My_make_unique(size_t size) {
+    typedef typename std::remove_extent<_Ty>::type U;
+    return uniquePtr<_Ty>(new U[size]());
+}
+```
+
+- `std::enable_if`: 这是一个条件模板，用于在特定条件下启用或禁用模板特化。他有两个参数<bool,T>
+- `std::is_array`: 检查 `_Ty` 是否是数组类型。
+- `std::extent`: 获取数组的大小，如果是动态数组（`T[]`），其值为 0。
+- `std::remove_extent`: 移除数组的一个维度，例如 `int[]` 变成 `int`。
+
+这个函数模板专门用于创建动态数组。条件 `std::is_array<_Ty>::value && std::extent<_Ty>::value == 0` 确保只有未知边界的数组（如 `int[]`）才能使用这个版本。
+
+3. 为什么设计不同版本的 `My_make_unique()`：
+
+设计不同版本主要是为了处理不同的情况，提供类型安全和更好的用户体验：
+
+a) 单个对象版本：
+```cpp
+template<class _Ty, class... _Types>
+typename std::enable_if<!std::is_array<_Ty>::value, uniquePtr<_Ty>>::type
+My_make_unique(_Types&&... _Args) {
+    return uniquePtr<_Ty>(new _Ty(std::forward<_Types>(_Args)...));
+}
+```
+这个版本用于创建单个对象，可以接受任意数量的参数来构造对象。
+
+b) 未知边界数组版本（您提到的那个）：
+用于创建动态数组，需要指定数组大小。
+
+c) 已知边界数组版本（通常被禁用）：
+```cpp
+template<class _Ty, class... _Types>
+typename std::enable_if<std::extent<_Ty>::value != 0, void>::type
+My_make_unique(_Types&&...) = delete;
+```
+这个版本通常被禁用，因为 C++ 不允许动态分配已知大小的数组。
+
+4. 设计多个版本的好处：
+
+- 类型安全：编译时就可以检查类型错误。
+- 功能完整性：可以处理单个对象和数组的不同情况。
+- 符合标准：模仿 `std::make_unique` 的行为，使用起来更加直观。
+- 优化机会：编译器可以根据不同情况进行优化。
+
+5. 使用示例：
+
+```cpp
+auto p1 = My_make_unique<int>(5);  // 创建单个 int
+auto p2 = My_make_unique<int[]>(10);  // 创建大小为 10 的 int 数组
+// My_make_unique<int[10]>(5);  // 编译错误，不允许创建已知大小的数组
+```
+
+这种设计方式使得 `My_make_unique` 在使用时更加安全和灵活，能够正确处理各种情况，同时防止误用。这是现代 C++ 编程中常用的一种模板设计模式，用于提供更好的类型安全性和用户体验。*/
+````
+
+
+
+***
+
+非堆区的内存管理（比如文件）：
+![image-20240927120645230](C++学习笔记.assets/image-20240927120645230.png)
+
+此时fp的删除器，使用的是delete p；这是不行的，你fprintf到此文件后，其实并没有把内容写进去，所以应该fclose；
+
+![image-20240927120830279](C++学习笔记.assets/image-20240927120830279.png)
+
+***
+
+````
+yhp::My_unique_ptr<FILE> fp(fopen("test.txt","w"),my_default_deleter<FILE>());
+//也可以这样调用，但是fp是一个unique_ptr对象，人家只支持一个参数的构造函数，所以你要在unique_ptr的成员函数中再加一个构造函数（模板）：
+````
+
+![image-20240927121909874](C++学习笔记.assets/image-20240927121909874.png)
+
+总之，FILE类型，不能用make_unique来构建；因为FILE没有构造函数；
+
+总结：unique_ptr:
+它强调专一性：他永远独有某个对象，而不允许其他的unique_ptr指向和他同一个对象；所以他在设计上不允许拷贝构造+赋值；
+
+但是可以转移（在两个unique_ptr）；
+
+你设计代码时：你的这个对象是否要共享所有权？要！就选择shared_ptr；反之，unique_ptr；
+
+unique_ptr效率更高，因为他不需要维护引用计数控制块；
+
+使用场景：
+1.类内使用(不再操心资源释放：Stu释放，Computer也自动释放)
+
+```
+class Computer {
+public:
+    void game()const {}
+    void program()const {}
+};
+class Stu {
+private:
+    hanxian::uniquePtr<Computer> p;
+public:
+    Stu() :p(new Computer()) {}
+    ~Stu() {}//不再需要析构，因为我们使用了智能指针
+    void study()const {
+        p->program();
+    }
+    void amusement()const {
+        p->game();
+    }
+};
+```
+
+**2.函数中**
+
+```
+hanxian::uniquePtr<Int> fun(int x) {
+    hanxian::uniquePtr<Int> pInt(new Int(x));
+    return pInt;
+}
+
+int main() {
+    hanxian::uniquePtr<Int> p = fun(11);
+    p->PrintInt();
+    return 0;
+}
+```
+
+![image-20240927151214969](C++学习笔记.assets/image-20240927151214969.png)
+
+如上，这意味着我们可以将函数中unique_ptr返回，届时会构建将亡值对象将资源转移过来。上面程序中的代码移动赋值会被优化掉；
+
+3.工厂模式与unique_ptr:
+
+```
+#include<iostream>
+#include<vector>
+using namespace std;
+template<class Seq>
+void purge(Seq& c){
+  for (typename Seq::iterator it = c.begin(); it != c.end();it++){
+    delete *it;
+    *it = nullptr;
+  }
+}
+class Shape{
+ public:
+  virtual void draw() = 0;
+  virtual void erase() = 0;
+  virtual ~Shape(){}
+  class BadShapeCreation:public logic_error{
+    public:
+      BadShapeCreation(string type) : logic_error("cannot create type:" + type){}
+  };
+  static Shape *factory(const string &type);
+};
+class Circle : public Shape{
+  private:
+  Circle(){}
+  friend class Shape;
+  public:
+  void draw(){
+    cout << "draw Circle" << endl;
+  }
+  void erase(){
+    cout << "erase Circle" << endl;
+  }
+  ~Circle(){
+    cout << "~Circle" << endl;
+  }
+};
+class Square:public Shape{
+  private:
+  Square(){}
+  friend class Shape;
+  public:
+  void draw(){
+    cout << "draw Square" << endl;
+  }
+  void erase(){
+    cout << "erase Square" << endl;
+  }
+  ~Square(){
+    cout << "~Square" << endl;
+  }
+};
+
+Shape* Shape::factory(const string& type){
+  if(type=="Circle"){
+    return new Circle;
+  }
+  if(type=="Square"){
+    return new Square;
+  }
+  throw BadShapeCreation(type);
+}
+string s1[] = {"Circle", "Circle", "Square", "Circle","Arc"};
+int main(){
+  vector<Shape *> vec;
+  try{
+    for (size_t i = 0;i<sizeof(s1)/sizeof(s1[0]);i++){
+      vec.push_back(Shape::factory(s1[i]));
+    }
+  }
+  catch(Shape::BadShapeCreation&e){
+    cout << e.what() << endl;
+    purge(vec);
+    return EXIT_FAILURE;
+  }
+  for (size_t i = 0; i < vec.size();i++){
+    vec[i]->draw();
+    vec[i]->erase();
+  }
+  purge(vec);
+  return 0;
+}
+```
+
+以上是不适用智能指针的方式，我们必须使用purge函数来释放内存，但是我们试试智能指针：
+```
+#include<iostream>
+#include<vector>
+using namespace std;
+namespace hanxian
+{
+  template <class _Ty>
+  struct my_default_deleter
+  {
+    void operator()(_Ty *p) const
+    {
+      delete p;
+    }
+  };
+  template <class _Ty> // 专门针对数组的模板特化（为特定的类型提供特殊的实现）
+  struct my_default_deleter<_Ty[]>
+  {
+    void operator()(_Ty *p) const
+    {
+      delete[] p;
+    }
+  };
+
+  template <class _Ty, class _Dx = my_default_deleter<_Ty>>
+  class uniquePtr
+  {
+  public:
+    using element_type = _Ty;
+    using pointer = _Ty *;
+    using deleter_type = _Dx;
+
+  private:
+    pointer mPtr;
+    deleter_type mDeleter;
+
+  public:
+    uniquePtr(const uniquePtr &) = delete; // unique_ptr没有拷贝构造和赋值
+    uniquePtr &operator=(const uniquePtr &) = delete;
+    uniquePtr(uniquePtr &&other)
+    { // 移动构造不要写const uniquePtr&&other，因为你要动他（转移它的资源）
+      mPtr = other.mPtr;
+      other.mPtr = nullptr;
+      cout << "移动构造" << endl;
+    }
+    uniquePtr &operator=(uniquePtr &&other)
+    { // 移动赋值也是动资源
+      if (this != &other)
+      {
+        // 1.
+        // delete mPtr;
+        // mPtr = other.mPtr;
+        // other.mPtr = nullptr;
+        // 2.
+        reset(other.release());
+      }
+      cout << "移动赋值" << endl;
+      return *this;
+    }
+    explicit uniquePtr(pointer p = nullptr) : mPtr(p) {}
+    ~uniquePtr()
+    {
+      reset();
+    }
+    pointer release()
+    {
+      pointer old = mPtr;
+      mPtr = nullptr;
+      return old;
+    }
+    pointer get() const
+    {
+      return mPtr;
+    }
+    _Dx &get_deleter()
+    {
+      return mDeleter; // 返回删除器对象
+    }
+    const _Dx &get_deleter() const
+    {
+      return mDeleter;
+    }
+    void reset(pointer p = nullptr)
+    {
+      if (mPtr)
+      {
+        mDeleter(mPtr); // mDeleter.operator()(this->mPtr);
+      }
+      mPtr = p;
+    }
+    void swap(uniquePtr &it)
+    {
+      std::swap(it.mPtr, this->mPtr);
+      std::swap(it.mDeleter, this->mDeleter);
+    }
+    explicit operator bool() const
+    {
+      return mPtr != nullptr;
+    }
+    _Ty *operator->() const
+    {
+      return mPtr;
+    }
+    _Ty &operator*() const
+    {
+      return *mPtr;
+    }
+  };
+
+  template <class _Ty, class _Dx>
+  class uniquePtr<_Ty[], _Dx>
+  {
+  public:
+    using element_type = _Ty;
+    using pointer = _Ty *;
+    using deleter_type = _Dx;
+
+  private:
+    pointer mPtr;
+    deleter_type mDeleter;
+
+  public:
+    uniquePtr(const uniquePtr &) = delete; // unique_ptr没有拷贝构造和赋值
+    uniquePtr &operator=(const uniquePtr &) = delete;
+    uniquePtr(uniquePtr &&other)
+    { // 移动构造不要写const uniquePtr&&other，因为你要动他（转移它的资源）
+      mPtr = other.mPtr;
+      other.mPtr = nullptr;
+    }
+    uniquePtr &operator=(uniquePtr &&other)
+    { // 移动赋值也是动资源
+      if (this != &other)
+      {
+        // 1.
+        // delete mPtr;
+        // mPtr = other.mPtr;
+        // other.mPtr = nullptr;
+        // 2.
+        reset(other.release());
+      }
+      return *this;
+    }
+    explicit uniquePtr(pointer p = nullptr) : mPtr(p) { cout << "uniquePtr()" << endl; }
+    ~uniquePtr()
+    {
+      reset();
+    }
+    pointer release()
+    {
+      pointer old = mPtr;
+      mPtr = nullptr;
+      return old;
+    }
+    pointer get() const
+    {
+      return mPtr;
+    }
+    _Dx &get_deleter()
+    {
+      return mDeleter; // 返回删除器对象
+    }
+    const _Dx &get_deleter() const
+    {
+      return mDeleter;
+    }
+    void reset(pointer p = nullptr)
+    {
+      if (mPtr)
+      {
+        mDeleter(mPtr); // mDeleter.operator()(this->mPtr);
+      }
+      mPtr = p;
+    }
+    void swap(uniquePtr &it)
+    {
+      std::swap(it.mPtr, this->mPtr);
+      std::swap(it.mDeleter, this->mDeleter);
+    }
+    explicit operator bool() const
+    {
+      return mPtr != nullptr;
+    }
+    _Ty *operator->() const = delete; // 数组不再允许使用箭头和解引用访问
+    _Ty &operator*() const = delete;  // 转而加一个[]访问
+    _Ty &operator[](const size_t i) const
+    {
+      // 此处也可以加越界检查
+      return mPtr[i]; // return get()[i];
+    }
+  };
+
+  template <class _Ty, class... _Types>
+  uniquePtr<_Ty> My_make_unique(_Types &&..._Args)
+  { // 将()写成<>了，我去！这是一个函数啊:void fun(){}
+    return uniquePtr<_Ty>(new _Ty(std::forward<_Types>(_Args)...));
+    // std::forward 确保了参数的完美转发，避免不必要的拷贝
+  }
+
+}
+
+class Shape{
+ public:
+  virtual void draw() = 0;
+  virtual void erase() = 0;
+  virtual ~Shape(){}
+  class BadShapeCreation:public logic_error{
+    public:
+      BadShapeCreation(string type) : logic_error("cannot create type:" + type){}
+  };
+  static hanxian::uniquePtr<Shape> factory(const string &type);
+};
+class Circle : public Shape{
+  private:
+  Circle(){}
+  friend class Shape;
+  public:
+  void draw(){
+    cout << "draw Circle" << endl;
+  }
+  void erase(){
+    cout << "erase Circle" << endl;
+  }
+  ~Circle(){
+    cout << "~Circle" << endl;
+  }
+};
+class Square:public Shape{
+  private:
+  Square(){}
+  friend class Shape;
+  public:
+  void draw(){
+    cout << "draw Square" << endl;
+  }
+  void erase(){
+    cout << "erase Square" << endl;
+  }
+  ~Square(){
+    cout << "~Square" << endl;
+  }
+};
+
+hanxian::uniquePtr<Shape> Shape::factory(const string& type){
+  if(type=="Circle"){
+    return hanxian::uniquePtr<Shape>(new Circle());
+  }
+  if(type=="Square"){
+    return hanxian::uniquePtr<Shape>(new Square());
+  }
+  throw BadShapeCreation(type);
+}
+string s1[] = {"Circle", "Arc","Circle", "Square", "Circle","Square"};
+int main(){
+  vector<hanxian::uniquePtr<Shape>> vec;
+  try{
+    for (size_t i = 0;i<sizeof(s1)/sizeof(s1[0]);i++){
+      vec.push_back(Shape::factory(s1[i]));
+    }
+  }
+  catch(Shape::BadShapeCreation&e){
+    cout << e.what() << endl;
+    return EXIT_FAILURE;
+  }
+  for (size_t i = 0; i < vec.size();i++){
+    vec[i]->draw();
+    vec[i]->erase();
+  }
+  return 0;
+}
+//注意：Circle和Square构造函数都是私有，所以不能用make_unique来构建；
+```
+
+
+
+***
+
+析构函数不能私有，不然除了你的友元别人多干不动你了；
+
+***
+
+new有四个步骤：计算大小-调用operator new申请空间-调用构造函数构建对象-返回地址给指针，四个步骤可能被打断，所以要加锁；
+
+***
+
+new也是会调用构造函数的，如果后者私有，你就new不动了，就看看有没有人家提供的公有的方法；
+
+***
+
+下面是unique_ptr另一个使用场景？我感觉不出来；
+```
+class Single{
+  private:
+    int _id;
+    static Single *_p;
+    Single(int id) : _id(id) { cout << "Single()" << endl; }
+    Single &operator=(const Single &) = delete;
+    Single(const Single &) = delete;
+  public:
+    ~Single() { cout << "~Single()" << endl; }
+    static Single* instance() {
+      if(!_p){
+        _p = new Single(0); // 如果在多线程环境中使用，这种实现可能导致竞态条件(new分四步，若被挂起，将线程不安全)
+      }
+      return _p;
+    }
+};
+Single* Single::_p = nullptr;
+void fun(){
+  hanxian::uniquePtr<Single> p(Single::instance());
+}
+int main(){
+  fun();
+}
+```
+
+****
+
+
+
+
+
+
+
+***
+
+插入：
+
+```
+
+#include<iostream>
+using namespace std;
+// 这个函数模板的作用是：它可以接受任何类型、任何大小的数组作为参数，通过[引用]传递。
+template<class T,int N>
+void fun(T (&arr)[N])
+{ /*使用T (&arr)[N]这样的引用参数声明很重要，因为它防止了数组退化为指针。如果函数参数是指针（如T* arr），则会丢失大小信息。*/
+  for(auto&e :arr)
+    cout << e << " ";
+  cout << typeid(arr).name() << endl;
+}
+int main(){
+  int arr[5]{1, 5, 9, 5, 6};
+  fun(arr);
+  /*我们调用fun时候并没有指定数组大小，但是fun还是知道。why？因为：编译器能够做到这一点，是因为数组在传递给函数时并没有退化为指针。fun函数参数是T (&arr)[N]，这要求一个确切大小的数组引用，这保留了数组的完整类型信息。值得注意的是：数组arr的类型并不是int而是int [5]，对于数组来说：大小也是判断是否是相同类型的重要条件，并不是说你元素类型一样，你俩就是一样的
+
+*/
+  double doubleArray[]{1.1, 2.2, 3.3};
+  fun(doubleArray);
+  return 0;
+}
+/*
+两大优点：
+大小感知：函数知道数组的确切大小，避免了传统C风格数组退化为指针时丢失大小信息的问题。
+引用传递：通过引用传递数组，避免了数组拷贝，提高了效率。
+*/
+```
+
+***
+
+
+
+```
+template<class Seq>
+void purge(Seq& s) {
+    //for (auto it = s.begin(); it != s.end(); it++) {
+    for(typename s::iterator it = s.begin();it!=s.end();it++){
+        delete* it;
+        *it = nullptr;
+    }
+}//清掉一个容器（容器里装的是普通指针，指针指向的是堆区的对象）
+//容器里其实可以考虑智能指针，
+```
+
+
+
+
+
+**至此，智能指针1-15讲看完。要开项目了，所以停止。**
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
